@@ -1,0 +1,445 @@
+# Tile.crpl
+# Created on: 7/27/2018 10:54:46 AM
+# ------------------------------------------
+$iDecayableType:0
+$bStrong:0
+$bCrazonium:0
+$sSpecial:"NONE"
+$sSkinImage:""
+$bIsSkinImageTiled:0
+
+CurrentCoords ->iCellY ->iCellX
+
+once
+	<-iDecayableType 0 lt <-iDecayableType 3 gt or if
+		0 ->iDecayableType
+	endif
+
+	Self CONST_MAXHEALTH 			1 SetUnitAttribute
+	Self CONST_HEALTH 				1 SetUnitAttribute
+	Self CONST_HEALRATE 			0 SetUnitAttribute
+	Self CONST_AMMO 				0 SetUnitAttribute
+
+	<-bStrong if
+		Self CONST_MAXAMMO 30 SetUnitAttribute
+	else
+		Self CONST_MAXAMMO 6 SetUnitAttribute
+	endif
+
+	<-bCrazonium if
+		"NONE" ->sSpecial
+		0 ->bStrong
+		0 ->iDecayableType
+	endif
+
+	0.0 ->fDecayRate
+	<-iDecayableType 1 eq if
+		0.04 ->fDecayRate
+	else <-iDecayableType 2 eq if
+		0.01 ->fDecayRate
+	else <-iDecayableType 3 eq if
+		0.0025 ->fDecayRate
+	endif endif endif
+
+	<-iCellX <-iCellY 				10 SetTerrain
+	<-iCellX 1 add <-iCellY 		10 SetTerrain
+	<-iCellX 1 sub <-iCellY 		10 SetTerrain
+	<-iCellX <-iCellY 1 add 		10 SetTerrain
+	<-iCellX <-iCellY 1 sub 		10 SetTerrain
+	<-iCellX 1 add <-iCellY 1 add 	10 SetTerrain
+	<-iCellX 1 sub <-iCellY 1 add 	10 SetTerrain
+	<-iCellX 1 add <-iCellY 1 sub 	10 SetTerrain
+	<-iCellX 1 sub <-iCellY 1 sub 	10 SetTerrain
+
+	<-iCellY 2 add <-iCellY 1 sub do
+		<-iCellX 2 add <-iCellX 1 sub do
+			I J 1 SetWall
+		loop
+	loop
+
+	@awake
+
+	0 ->iTimer0
+	0 ->iTimer1
+endonce
+
+IsPaused if
+	return
+endif
+
+<-iTimer0 1 sub 0 max ->iTimer0
+<-iTimer1 1 sub 0 max ->iTimer1
+
+Self CONST_AMMO GetUnitAttribute Self CONST_MAXAMMO GetUnitAttribute gte if
+	<-A_bPlaceSpecialWhenCarved if
+		<-sSpecial "NONE" eq if
+			"COLLECTOR" CurrentCoords CreateUnit
+		else
+			"SIPHON" CurrentCoords CreateUnit
+		endif
+	endif
+
+	Self 0 Destroy
+	return
+endif
+
+<-iDecayableType neq0 if
+	<-iTimer0 eq0 if
+		30 ->iTimer0
+
+		FALSE ->bCreeperBordering
+
+		<-iCellX 2 add <-iCellX 1 sub do
+			I <-iCellY 2 sub GetCreeper 0.0 gt if
+				TRUE ->bCreeperBordering
+				break
+			endif
+
+			I <-iCellY 2 add GetCreeper 0.0 gt if
+				TRUE ->bCreeperBordering
+				break
+			endif
+		loop
+
+		<-bCreeperBordering not if
+			<-iCellY 2 add <-iCellY 1 sub do
+				<-iCellX 2 sub I GetCreeper 0.0 gt if
+					TRUE ->bCreeperBordering
+					break
+				endif
+
+				<-iCellX 2 add I GetCreeper 0.0 gt if
+					TRUE ->bCreeperBordering
+					break
+				endif
+			loop
+		endif
+
+		<-bCreeperBordering if
+			Self CONST_HEALTH Self CONST_HEALTH GetUnitAttribute <-fDecayRate sub SetUnitAttribute
+
+			Self CONST_HEALTH GetUnitAttribute 0.0 lte if
+				Self 0 Destroy
+				return
+			endif
+		endif
+	endif
+endif
+
+<-iTimer1 eq0 if #repair walls every 20 seconds
+	30 20 mul ->iTimer1
+
+	<-iCellY 2 add <-iCellY 1 sub do
+		<-iCellX 2 add <-iCellX 1 sub do
+			I J 1 SetWall
+		loop
+	loop
+endif
+
+:awake
+	TRUE OperateWhilePaused
+	TRUE ->IDENTIFIER_TILE
+
+	-?A_bNotFirst not if
+		Self CONST_TAKEMAPSPACE 		TRUE  SetUnitAttribute
+	    Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+	    Self CONST_SUPPORTSDIGITALIS 	FALSE SetUnitAttribute
+	    Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+	    Self CONST_NULLIFIERDAMAGES 	FALSE SetUnitAttribute
+
+	    Self CONST_REQUESTPACKETS 		TRUE SetUnitAttribute
+		Self CONST_CANREQUESTAMMO 		TRUE SetUnitAttribute
+
+	    TRUE ->A_bNotFirst
+	endif
+
+	-?A_bCanBeCarved not if
+		TRUE ->A_bCanBeCarved
+	endif
+
+	-?A_bMarkedForCarving not if
+		FALSE ->A_bMarkedForCarving
+	endif
+
+	-?A_bPlaceSpecialWhenCarved not if
+		FALSE ->A_bPlaceSpecialWhenCarved
+	endif
+
+	#Initialize collectible values
+	50 ->A_iCollectibleAmtTechnytes
+	60 ->A_iCollectibleAmtGemRed
+	80 ->A_iCollectibleAmtGemGreen
+	100 ->A_iCollectibleAmtGemBlue
+	200 ->A_iCollectibleAmtGemWhite
+
+	#Initialize main image angle
+	-?fTileAngle not if
+		<-bCrazonium not if
+			0 4 RandInt ->fTileAngle
+
+			<-fTileAngle 0 eq if
+				2.0 PI mul ->fTileAngle
+			else <-fTileAngle 1 eq if
+				PI 2.0 div ->fTileAngle
+			else <-fTileAngle 2 eq if
+				PI ->fTileAngle
+			else <-fTileAngle 3 eq if
+				3.0 PI mul 2.0 div ->fTileAngle
+			endif endif endif endif
+		else
+			0 ->fTileAngle
+		endif
+	endif
+
+	#Initialize primary image
+	Self "main" "Custom0pp" SetImage
+
+	#Process skin image properties
+	<-sSkinImage StringLength 0 gt if
+		Self "main" <-sSkinImage SetImage
+
+		<-bIsSkinImageTiled if
+			0.0 ->fTileAngle
+		endif
+	endif
+
+	#Initialize decayable image
+	<-iDecayableType 0 eq if
+		
+	else <-iDecayableType 1 eq if
+		Self "decay" "Custom4pp" SetImage
+	else <-iDecayableType 2 eq if
+		Self "decay" "Custom5pp" SetImage
+	else <-iDecayableType 3 eq if
+		Self "decay" "Custom6pp" SetImage
+	endif endif endif endif
+
+	#Initialize strong addon image
+	<-bStrong <-bCrazonium not and if
+		Self "strong" "Custom3pp" SetImage
+	else <-bCrazonium if
+		Self "strong" "Custom2pp" SetImage
+	else
+		Self "strong" "NONE" SetImage
+	endif endif
+
+	#Initialize collectible addon image
+	<-sSpecial "NONE" neq if
+		<-sSpecial "TECHNYTES" eq if
+			Self "special" "Custom16" SetImage
+			"Aether: " <-A_iCollectibleAmtTechnytes concat SetPopupText
+		else <-sSpecial "GEM_RED" eq if
+			Self "special" "Custom12" SetImage
+			"Energy: " <-A_iCollectibleAmtGemRed concat SetPopupText
+		else <-sSpecial "GEM_GREEN" eq if
+			Self "special" "Custom13" SetImage
+			"Energy: " <-A_iCollectibleAmtGemGreen concat SetPopupText
+		else <-sSpecial "GEM_BLUE" eq if
+			Self "special" "Custom14" SetImage
+			"Energy: " <-A_iCollectibleAmtGemBlue concat SetPopupText
+		else <-sSpecial "GEM_WHITE" eq if
+			Self "special" "Custom15" SetImage
+			"Energy: " <-A_iCollectibleAmtGemWhite concat SetPopupText
+		else <-sSpecial "ORE" eq if
+			Self "special" "Custom8" SetImage
+			FALSE ->A_bCanBeCarved
+
+			CurrentX 3 sub CurrentY @BuildOrePatch
+			CurrentX 3 add CurrentY @BuildOrePatch
+			CurrentX CurrentY 3 sub @BuildOrePatch
+			CurrentX CurrentY 3 add @BuildOrePatch
+		endif endif endif endif endif endif
+	endif
+
+	<-bCrazonium if
+		FALSE ->A_bCanBeCarved
+	endif
+
+	Self "shadow" "Custom1pp" SetImage
+	
+	Self "main" 1.05 dup SetImageScale
+	Self "main" 0 0 1.0 SetImagePosition
+	Self "main" <-fTileAngle SetImageRotation
+
+	Self "decay" 1 dup SetImageScale
+	Self "decay" 0 0 0.9 SetImagePosition
+	Self "decay" <-fTileAngle SetImageRotation
+
+	Self "strong" 1 dup SetImageScale
+	Self "strong" 0 0 0.8 SetImagePosition
+	Self "strong" <-fTileAngle SetImageRotation
+
+	Self "special" 1 dup SetImageScale
+	Self "special" 0 0 0.7 SetImagePosition
+
+	Self "x" 1 dup SetImageScale
+	Self "x" 0 0 0.6 SetImagePosition
+
+	Self "shadow" 1.3 dup SetImageScale
+	Self "shadow" 0 0 1.1 SetImagePosition
+:destroyed
+	<-iCellX 3 sub <-iCellY @UnlockMarkedTileForCarving
+	<-iCellX 3 add <-iCellY @UnlockMarkedTileForCarving
+	<-iCellX <-iCellY 3 sub @UnlockMarkedTileForCarving
+	<-iCellX <-iCellY 3 add @UnlockMarkedTileForCarving
+
+	<-sSpecial "NONE" neq if
+		<-sSpecial "TECHNYTES" eq if
+			"RESOURCEPACK" <-iCellX <-iCellY CreateUnit ->D_iUID
+			<-D_iUID 0 "RESOURCETYPE" "AETHER" SetScriptVar
+			<-D_iUID 0 "AMT" <-A_iCollectibleAmtTechnytes SetScriptVar
+			<-D_iUID 0 "MAXAMT" <-A_iCollectibleAmtTechnytes SetScriptVar
+			"GRAY" "RESOURCEPACK" "Aether" "Uncovered" CurrentPixelCoords ShowGameEventTag
+
+		else <-sSpecial "GEM_RED" eq if
+			"RESOURCEPACK" <-iCellX <-iCellY CreateUnit ->D_iUID
+			<-D_iUID 0 "RESOURCETYPE" "ENERGY" SetScriptVar
+			<-D_iUID 0 "AMT" <-A_iCollectibleAmtGemRed SetScriptVar
+			<-D_iUID 0 "MAXAMT" <-A_iCollectibleAmtGemRed SetScriptVar
+			"GREEN" "RESOURCEPACK" "Energy" "Uncovered" CurrentPixelCoords ShowGameEventTag
+
+		else <-sSpecial "GEM_GREEN" eq if
+			"RESOURCEPACK" <-iCellX <-iCellY CreateUnit ->D_iUID
+			<-D_iUID 0 "RESOURCETYPE" "ENERGY" SetScriptVar
+			<-D_iUID 0 "AMT" <-A_iCollectibleAmtGemGreen SetScriptVar
+			<-D_iUID 0 "MAXAMT" <-A_iCollectibleAmtGemGreen SetScriptVar
+			"GREEN" "RESOURCEPACK" "Energy" "Uncovered" CurrentPixelCoords ShowGameEventTag
+
+		else <-sSpecial "GEM_BLUE" eq if
+			"RESOURCEPACK" <-iCellX <-iCellY CreateUnit ->D_iUID
+			<-D_iUID 0 "RESOURCETYPE" "ENERGY" SetScriptVar
+			<-D_iUID 0 "AMT" <-A_iCollectibleAmtGemBlue SetScriptVar
+			<-D_iUID 0 "MAXAMT" <-A_iCollectibleAmtGemBlue SetScriptVar
+			"GREEN" "RESOURCEPACK" "Energy" "Uncovered" CurrentPixelCoords ShowGameEventTag
+
+		else <-sSpecial "GEM_WHITE" eq if
+			"RESOURCEPACK" <-iCellX <-iCellY CreateUnit ->D_iUID
+			<-D_iUID 0 "RESOURCETYPE" "ENERGY" SetScriptVar
+			<-D_iUID 0 "AMT" <-A_iCollectibleAmtGemWhite SetScriptVar
+			<-D_iUID 0 "MAXAMT" <-A_iCollectibleAmtGemWhite SetScriptVar
+			"GREEN" "RESOURCEPACK" "Energy" "Uncovered" CurrentPixelCoords ShowGameEventTag
+
+		endif endif endif endif endif
+	endif
+
+	<-iCellX <-iCellY 				1 SetTerrain
+	<-iCellX 1 add <-iCellY 		1 SetTerrain
+	<-iCellX 1 sub <-iCellY 		1 SetTerrain
+	<-iCellX <-iCellY 1 add 		1 SetTerrain
+	<-iCellX <-iCellY 1 sub 		1 SetTerrain
+	<-iCellX 1 add <-iCellY 1 add 	1 SetTerrain
+	<-iCellX 1 sub <-iCellY 1 add 	1 SetTerrain
+	<-iCellX 1 add <-iCellY 1 sub 	1 SetTerrain
+	<-iCellX 1 sub <-iCellY 1 sub 	1 SetTerrain
+
+	<-iCellY 2 add <-iCellY 1 sub do
+		<-iCellX 2 add <-iCellX 1 sub do
+			I J 0 SetWall
+		loop
+	loop
+
+	"IDENTIFIER_MAPFOGMANAGER" TRUE GetCoresWithVar 0 do
+		->iMapUID
+
+		<-iMapUID "MapFogManager.crpl" "lFogUpdateEvents" GetScriptVar ->lFogUpdateEvents
+
+		<-lFogUpdateEvents <-iCellX AppendToList
+		<-lFogUpdateEvents <-iCellY AppendToList
+		<-lFogUpdateEvents FALSE AppendToList
+		<-lFogUpdateEvents FALSE AppendToList
+		
+		<-iMapUID "MapFogManager.crpl" "lFogUpdateEvents" <-lFogUpdateEvents SetScriptVar 
+	loop
+
+	"IDENTIFIER_GATEWAY" TRUE GetCoresWithVar 0 do
+		->iGatewayUID
+
+		<-iGatewayUID "Gateway.crpl" "bForcePathUpdate" TRUE SetScriptVar
+	loop
+:UnlockMarkedTileForCarving
+	->UMT_iY
+	->UMT_iX
+	
+	<-UMT_iX <-UMT_iY 0 TRUE GetAllUnitsInRange 0 do
+		->UMT_iUID
+
+		<-UMT_iUID "Tile.crpl" "A_bMarkedForCarving" GetScriptVar if
+			<-UMT_iUID @IsTileBlocked not if
+				<-UMT_iUID CONST_CONNECTABLE TRUE SetUnitAttribute
+			endif
+		endif
+	loop
+:IsTileBlocked
+	->ITB_iY
+	->ITB_iX
+
+	<-ITB_iX <-ITB_iY @SnapCoordsToGrid ->ITB_iY ->ITB_iX
+
+	-1 ->ITB_iMapUID
+
+	"IDENTIFIER_MAPFOGMANAGER" TRUE GetCoresWithVar 0 do
+		->ITB_iMapUID
+	loop
+
+	<-ITB_iMapUID -1 eq if
+		FALSE return
+	endif
+
+	<-ITB_iMapUID "MapFogManager.crpl" "lRadarUIDs" GetScriptVar ->ITB_lRadarUIDs
+
+	<-ITB_lRadarUIDs GetListCount 0 do
+		<-ITB_lRadarUIDs I GetListElement ->ITB_iRadarUID
+
+		<-ITB_iX 3 add <-ITB_iY <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt
+		<-ITB_iX 3 sub <-ITB_iY <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt or
+		<-ITB_iX <-ITB_iY 3 add <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt or
+		<-ITB_iX <-ITB_iY 3 sub <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt or
+		if
+			FALSE return
+		endif
+	loop
+
+	TRUE return
+:SnapCoordsToGrid
+	->SCT_iCellY
+	->SCT_iCellX
+
+	<-SCT_iCellX asint ->SCT_iCellX
+	<-SCT_iCellY asint ->SCT_iCellY
+
+	<-SCT_iCellX 3 div asint 3 mul 1 add
+	<-SCT_iCellY 3 div asint 3 mul 1 add
+	return
+:BuildOrePatch
+	->BOP_iCellY
+	->BOP_iCellX
+
+	<-BOP_iCellX 0 lt if
+		return
+	endif
+
+	<-BOP_iCellY 0 lt if
+		return
+	endif
+
+	<-BOP_iCellX MapWidth gte if
+		return
+	endif
+
+	<-BOP_iCellY MapHeight gte if
+		return
+	endif
+
+	<-BOP_iCellX <-BOP_iCellY @SnapCoordsToGrid ->BOP_iCellY ->BOP_iCellX
+
+	<-BOP_iCellX <-BOP_iCellY 1 TRUE GetAllUnitsInRange 0 do
+		->BOP_iUID
+
+		<-BOP_iUID GetUnitType "OREDEPOSIT" eq if
+			<-BOP_iUID CONST_COORDX <-BOP_iCellX SetUnitAttribute
+			<-BOP_iUID CONST_COORDY <-BOP_iCellY SetUnitAttribute
+			return
+		endif
+	loop
+
+	"OREDEPOSIT" <-BOP_iCellX <-BOP_iCellY CreateUnit

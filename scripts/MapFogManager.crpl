@@ -1,0 +1,445 @@
+# MapFogManager.crpl
+# Created on: 8/7/2018 10:29:35 PM
+# ------------------------------------------
+
+#Class: ImageContainerManager
+#Components:
+# * ImageContainerManager:Init()
+# * ImageContainerManager:Reset()
+# * ImageContainerManager:Add()
+# * ImageContainerManager:Remove()
+# * ImageContainerManager:GetImageName()
+once
+	TRUE ->bTrace
+
+	@awake
+
+	CreateList ->lRadarUIDs
+	CreateList ->lFogUpdateEvents #{ [iCellX, iCellY, bFullUpdate, bResetAllFog] }
+
+	FALSE ->bFirstRadarPlaced
+
+
+	### ImageContainerManager:Init()
+	16 ->iImageContainerListChunkSize
+	CreateList ->l2dImageContainers
+	MapWidth MapHeight @CellCoordsTo2dListCoords ->iMapHeightList ->iMapWidthList
+	<-iMapHeightList 1 sub <-iImageContainerListChunkSize div asint 1 add 0 do
+		<-l2dImageContainers I CreateList SetListElement
+
+		<-iMapWidthList 1 sub <-iImageContainerListChunkSize div asint 1 add 0 do
+			"CRPLCORE" 0 0 CreateUnit ->iUID
+			<-iUID CONST_COORDX -5 SetUnitAttribute
+			<-iUID CONST_COORDY -5 SetUnitAttribute
+			<-iUID "ImageContainer.crpl" AddScriptToUnit
+			<-iUID "ImageContainer.crpl" "bExists" TRUE SetScriptVar
+
+			<-l2dImageContainers J GetListElement I <-iUID SetListElement
+		loop 
+	loop
+	### /ImageContainerManager:Init()
+endonce
+
+Self "MapCommandNodeManager.crpl" "lNewlyOperationalCommandNodes" GetScriptVar ->lNewlyOperationalCommandNodes
+
+<-lNewlyOperationalCommandNodes GetListCount 0 gt if
+	<-lNewlyOperationalCommandNodes GetListCount 0 do
+		<-lNewlyOperationalCommandNodes I GetListElement ->iUID
+
+		"CRPLCORE" <-iUID CONST_COORDX GetUnitAttribute <-iUID CONST_COORDY GetUnitAttribute CreateUnit ->iRadarUID
+		<-iRadarUID "CustomUnitBase.crpl" AddScriptToUnit
+	    <-iRadarUID "Radar.crpl" AddScriptToUnit
+	    <-iRadarUID "Radar.crpl" "bExists" TRUE SetScriptVar
+
+		<-lRadarUIDs <-iRadarUID AppendToList
+
+		TRUE ->bFirstRadarPlaced
+
+		<-lFogUpdateEvents -1 AppendToList
+		<-lFogUpdateEvents -1 AppendToList
+		<-lFogUpdateEvents TRUE AppendToList
+		<-lFogUpdateEvents FALSE AppendToList
+	loop
+endif
+
+0 ->iI
+while <-iI <-lRadarUIDs GetListCount lt repeat
+	<-lRadarUIDs <-iI GetListElement ->iRadarUID
+
+	<-iRadarUID CONST_ISDESTROYED GetUnitAttribute if
+		<-lRadarUIDs <-iI RemoveListElement
+
+		<-lFogUpdateEvents -1 AppendToList
+		<-lFogUpdateEvents -1 AppendToList
+		<-lFogUpdateEvents TRUE AppendToList
+		<-lFogUpdateEvents FALSE AppendToList
+	else
+		<-iI 1 add ->iI
+	endif
+
+	#<-lRadarUIDs GetListCount eq0 if
+		#All radars destroyed. Game over.
+	#	FailMission
+	#endif
+endwhile
+
+<-lFogUpdateEvents GetListCount neq0 ->bAnUpdatePerformed
+FALSE ->bFullUpdatePerformed
+while <-lFogUpdateEvents GetListCount neq0 repeat
+	<-lFogUpdateEvents 0 GetListElement ->iCellX
+	<-lFogUpdateEvents 1 GetListElement ->iCellY
+	<-lFogUpdateEvents 2 GetListElement ->bFullUpdate
+	<-lFogUpdateEvents 3 GetListElement ->bResetAllFog
+
+	<-bFullUpdate <-bFullUpdatePerformed not and
+	<-bFullUpdate not or if
+		<-iCellX <-iCellY <-bFullUpdate <-bResetAllFog @BuildFog
+	endif
+
+	<-bFullUpdate ->bFullUpdatePerformed
+
+	<-lFogUpdateEvents 0 RemoveListElement
+	<-lFogUpdateEvents 0 RemoveListElement
+	<-lFogUpdateEvents 0 RemoveListElement
+	<-lFogUpdateEvents 0 RemoveListElement
+endwhile
+
+:awake
+	FALSE OperateWhilePaused
+	TRUE ->IDENTIFIER_MAPFOGMANAGER
+
+	<-bFirstRadarPlaced not if
+		<-lFogUpdateEvents -1 AppendToList
+		<-lFogUpdateEvents -1 AppendToList
+		<-lFogUpdateEvents TRUE AppendToList
+		<-lFogUpdateEvents TRUE AppendToList
+	endif
+:BuildFog
+	->BF_bResetAllFog
+	->BF_bFullUpdate
+	->BF_iCellY
+	->BF_iCellX
+
+	<-BF_bResetAllFog if
+		@MakeAllTilesUnconnectable
+		@BuildFogSafeInitialize
+		return
+	endif
+
+	<-BF_bFullUpdate if
+		@MakeAllTilesUnconnectable
+		@BuildFogSafeInitialize
+		@BuildFogFillAllWithFog
+		@BuildFogUncoverAllRadars
+		@BuildFogDestroyAllUnitGhostsInFog
+		return
+	endif
+
+	<-BF_iCellX <-BF_iCellY @SnapCoordsToGrid ->BF_iCellY ->BF_iCellX
+	<-BF_iCellX <-BF_iCellY @CellCoordsTo2dListCoords ->BF_iListY ->BF_iListX
+
+	#Don't fill the fog if the fog hasn't been initialized yet because no radar has been placed yet.
+	<-bFirstRadarPlaced if
+		<-BF_iCellX <-BF_iCellY @BuildFogFillCellWithFog
+	endif
+
+	#Check the cell's path to every radar on the map. If one connection exists, start an uncover routine. Otherwise the cell remains as fog until an opening is made.
+	<-lRadarUIDs GetListCount 0 do
+		<-lRadarUIDs I GetListElement ->BF_iRadarUID
+		<-BF_iCellX <-BF_iCellY <-BF_iRadarUID CONST_COORDX GetUnitAttribute <-BF_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt if
+			<-BF_iCellX <-BF_iCellY @UncoverFog
+			break
+		endif
+	loop
+
+	<-BF_iCellX <-BF_iCellY @BuildFogDestroyUnitGhostInFog
+:BuildFogSafeInitialize
+	### ImageContainerManager:Reset()
+	<-l2dImageContainers GetListCount 0 do
+		<-l2dImageContainers I GetListElement GetListCount 0 do
+			<-l2dImageContainers J GetListElement I GetListElement RemoveImages
+		loop 
+	loop
+	### /ImageContainerManager:Reset()
+
+	#If the fog list already exists (so we have something), we'll go over every entry, and change fog tiles back to default.
+	-?l2dFog if
+		<-l2dFog GetListCount 0 do
+			<-l2dFog I GetListElement GetListCount 0 do
+				I J @List2DCoordsToCellCoords ->BFS_iCellY ->BFS_iCellX
+
+				<-l2dFog J GetListElement I GetListElement 1 eq if
+					<-l2dFog J GetListElement I 0 SetListElement
+
+					<-BFS_iCellX <-BFS_iCellY <-BFS_iCellX <-BFS_iCellY GetCellOccupiedCount 1 sub SetCellOccupiedCount
+				endif
+			loop
+		loop
+	#If the fog list doesn't exist, we'll create it and initialize it with zeroes.
+	else
+		CreateList ->l2dFog
+
+		0 MapHeight 1 sub @SnapCoordsToGrid ->BFS_iCellY2 ->BFS_iCellY1
+		while <-BFS_iCellY1 <-BFS_iCellY2 lte repeat
+			<-BFS_iCellY1 <-BFS_iCellY2 @CellCoordsTo2dListCoords ->BFS_iListY2 ->BFS_iListY1
+
+			<-l2dFog <-BFS_iListY1 CreateList SetListElement
+
+			0 MapWidth 1 sub @SnapCoordsToGrid ->BFS_iCellX2 ->BFS_iCellX1
+			while <-BFS_iCellX1 <-BFS_iCellX2 lte repeat
+				<-BFS_iCellX1 <-BFS_iCellX2 @CellCoordsTo2dListCoords ->BFS_iListX2 ->BFS_iListX1
+				<-l2dFog <-BFS_iListY1 GetListElement <-BFS_iListX1 0 SetListElement
+
+				<-BFS_iCellX1 3 add ->BFS_iCellX1
+			endwhile
+
+			<-BFS_iCellY1 3 add ->BFS_iCellY1
+		endwhile
+	endif
+:BuildFogFillCellWithFog
+	->FCW_iCellY
+	->FCW_iCellX
+
+	<-FCW_iCellX <-FCW_iCellY @CellCoordsTo2dListCoords ->FCW_iListY ->FCW_iListX
+
+	#Search and find if there is a tile on current coordinates.
+	FALSE ->FCW_bTileFound
+	<-FCW_iCellX <-FCW_iCellY 0 TRUE GetAllUnitsInRange 0 do
+		->FCW_iUID
+
+		<-FCW_iUID "Tile.crpl" "IDENTIFIER_TILE" GetScriptVar if
+			TRUE ->FCW_bTileFound
+			break
+		endif
+	loop
+
+	#If there is a tile, and there's fog on it, then we remove it.
+	<-FCW_bTileFound if
+		<-l2dFog <-FCW_iListY GetListElement <-FCW_iListX GetListElement 1 eq if
+			<-l2dFog <-FCW_iListY GetListElement <-FCW_iListX 0 SetListElement
+			<-FCW_iCellX <-FCW_iCellY <-FCW_iCellX <-FCW_iCellY GetCellOccupiedCount 1 sub SetCellOccupiedCount
+			<-FCW_iListX <-FCW_iListY @FogImageRemove
+		endif
+	#Otherwise if there is no tile, and there's no fog there, we create it.
+	else
+		<-l2dFog <-FCW_iListY GetListElement <-FCW_iListX GetListElement 0 eq if
+			<-l2dFog <-FCW_iListY GetListElement <-FCW_iListX 1 SetListElement
+			<-FCW_iCellX <-FCW_iCellY <-FCW_iCellX <-FCW_iCellY GetCellOccupiedCount 1 add SetCellOccupiedCount
+			<-FCW_iListX <-FCW_iListY @FogImageAdd
+		endif
+	endif
+:BuildFogFillAllWithFog
+	#Fill every non-tile with fog.
+	0 MapHeight 1 sub @SnapCoordsToGrid ->BFF_iCellY2 ->BFF_iCellY1
+	while <-BFF_iCellY1 <-BFF_iCellY2 lte repeat
+		0 MapWidth 1 sub @SnapCoordsToGrid ->BFF_iCellX2 ->BFF_iCellX1
+		while <-BFF_iCellX1 <-BFF_iCellX2 lte repeat
+			<-BFF_iCellX1 <-BFF_iCellY1 @BuildFogFillCellWithFog
+
+			<-BFF_iCellX1 3 add ->BFF_iCellX1
+		endwhile
+
+		<-BFF_iCellY1 3 add ->BFF_iCellY1
+	endwhile
+:BuildFogUncoverAllRadars
+	#Uncover fog for every radar on the map.
+	<-lRadarUIDs GetListCount 0 do
+		<-lRadarUIDs I GetListElement ->UAR_iRadarUID
+		<-UAR_iRadarUID CONST_COORDX GetUnitAttribute <-UAR_iRadarUID CONST_COORDY GetUnitAttribute @SnapCoordsToGrid ->UAR_iRadarY ->UAR_iRadarX
+
+		<-UAR_iRadarX <-UAR_iRadarY @UncoverFog
+	loop
+:BuildFogDestroyUnitGhostInFog
+	->DUG_iCellY
+	->DUG_iCellX
+
+	<-DUG_iCellX <-DUG_iCellY @CellCoordsTo2dListCoords ->DUG_iListY ->DUG_iListX
+
+	<-l2dFog <-DUG_iListY GetListElement <-DUG_iListX GetListElement 1 eq if
+		<-DUG_iCellX <-DUG_iCellY 1 TRUE GetAllUnitsInRange 0 do
+			->DUG_iUID
+
+			<-DUG_iUID CONST_ISBUILDING GetUnitAttribute if
+				<-DUG_iUID 0 Destroy
+			endif
+
+			<-DUG_iUID GetUnitType "COMMANDNODE" eq if
+				Self "MapCommandNodeManager.crpl" "lCommandNodesOperational" GetScriptVar ->lCommandNodesOperational
+				Self "MapCommandNodeManager.crpl" "iCommandNodesOperationalVariableCount" GetScriptVar ->iCommandNodesOperationalVariableCount
+
+				0 ->DUG_iI
+				while <-DUG_iI <-lCommandNodesOperational GetListCount lt repeat
+					<-lCommandNodesOperational <-DUG_iI GetListElement <-DUG_iUID eq if
+						<-DUG_iUID 0 Destroy
+					endif
+
+					<-DUG_iI <-iCommandNodesOperationalVariableCount add ->DUG_iI
+				endwhile
+			endif
+		loop
+	endif
+:BuildFogDestroyAllUnitGhostsInFog
+	#Destroy all placed unit ghosts in terrain that has now become fog.
+	0 MapHeight 1 sub @SnapCoordsToGrid ->BFD_iCellY2 ->BFD_iCellY1
+	while <-BFD_iCellY1 <-BFD_iCellY2 lte repeat
+		0 MapWidth 1 sub @SnapCoordsToGrid ->BFD_iCellX2 ->BFD_iCellX1
+			while <-BFD_iCellX1 <-BFD_iCellX2 lte repeat
+
+				<-BFD_iCellX1 <-BFD_iCellY1 @BuildFogDestroyUnitGhostInFog
+
+				<-BFD_iCellX1 3 add ->BFD_iCellX1
+			endwhile
+
+		<-BFD_iCellY1 3 add ->BFD_iCellY1
+	endwhile
+:MakeAllTilesUnconnectable
+	"IDENTIFIER_TILE" TRUE GetCoresWithVar 0 do
+		->MAT_iUID
+
+		<-MAT_iUID "Tile.crpl" "A_bMarkedForCarving" GetScriptVar if
+			<-MAT_iUID CONST_CONNECTABLE FALSE SetUnitAttribute
+		endif
+	loop
+### ImageContainerManager:Add()
+:FogImageAdd
+	->FIA_iListY
+	->FIA_iListX
+
+	<-l2dImageContainers <-FIA_iListY <-iImageContainerListChunkSize div asint GetListElement <-FIA_iListX <-iImageContainerListChunkSize div asint GetListElement ->FIA_iImageContainerUID
+
+	<-FIA_iListX <-FIA_iListY @GetFogImageString ->FIA_sFogImage
+	<-FIA_iImageContainerUID <-FIA_sFogImage "Custom7pp" SetImage
+	<-FIA_iImageContainerUID <-FIA_sFogImage <-FIA_iListX 2 add 24 mul <-FIA_iListY 2 add 24 mul neg -10 SetImagePosition
+### /ImageContainerManager:Add()
+### ImageContainerManager:Remove()
+:FogImageRemove
+	->FIR_iListY
+	->FIR_iListX
+
+	<-l2dImageContainers <-FIR_iListY <-iImageContainerListChunkSize div asint GetListElement <-FIR_iListX <-iImageContainerListChunkSize div asint GetListElement ->FIR_iImageContainerUID
+
+	<-FIR_iListX <-FIR_iListY @GetFogImageString ->FIR_sFogImage
+	<-FIR_iImageContainerUID <-FIR_sFogImage "NONE" SetImage
+### /ImageContainerManager:Remove()
+:CellCoordsTo2dListCoords
+	@SnapCoordsToGrid ->CCT_iY ->CCT_iX
+
+	<-CCT_iX 1 sub 3 div
+	<-CCT_iY 1 sub 3 div return
+:List2DCoordsToCellCoords
+	->L2C_iY
+	->L2C_iX
+
+	<-L2C_iX 3 mul 1 add 
+	<-L2C_iY 3 mul 1 add return
+:UncoverFog
+	->UF_iCellY
+	->UF_iCellX
+
+	<-UF_iCellX <-UF_iCellY @CellCoordsTo2dListCoords ->UF_iListY ->UF_iListX
+
+	CreateList ->UF_lCoordinatesToProcess
+
+	<-UF_lCoordinatesToProcess <-UF_iListX AppendToList
+	<-UF_lCoordinatesToProcess <-UF_iListY AppendToList
+
+	while <-UF_lCoordinatesToProcess GetListCount 0 neq repeat
+		<-UF_lCoordinatesToProcess 0 GetListElement ->UF_iListX
+		<-UF_lCoordinatesToProcess 1 GetListElement ->UF_iListY
+		<-UF_iListX <-UF_iListY @List2DCoordsToCellCoords ->UF_iCellY ->UF_iCellX
+
+		<-l2dFog <-UF_iListY GetListElement <-UF_iListX GetListElement 1 eq if
+			<-l2dFog <-UF_iListY GetListElement <-UF_iListX 0 SetListElement
+
+			<-UF_iCellX <-UF_iCellY <-UF_iCellX <-UF_iCellY GetCellOccupiedCount 1 sub SetCellOccupiedCount
+
+			<-UF_iListX <-UF_iListY @FogImageRemove
+		endif
+
+		<-UF_lCoordinatesToProcess 0 RemoveListElement
+		<-UF_lCoordinatesToProcess 0 RemoveListElement
+
+		<-UF_iListY 1 add MapHeight 3 div lt if
+			<-UF_iListX <-UF_iListY 1 add @UncoverFog_ProcessSide
+		endif
+
+		<-UF_iListX 1 add MapWidth 3 div lt if
+			<-UF_iListX 1 add <-UF_iListY @UncoverFog_ProcessSide
+		endif
+
+		<-UF_iListY 1 sub 0 gte if
+			<-UF_iListX <-UF_iListY 1 sub @UncoverFog_ProcessSide
+		endif
+
+		<-UF_iListX 1 sub 0 gte if
+			<-UF_iListX 1 sub <-UF_iListY @UncoverFog_ProcessSide
+		endif
+	endwhile
+:UncoverFog_ProcessSide
+	->UFP_iListY
+	->UFP_iListX
+
+	<-UFP_iListX <-UFP_iListY @List2DCoordsToCellCoords ->UFP_iCellY ->UFP_iCellX
+
+	<-l2dFog <-UFP_iListY GetListElement <-UFP_iListX GetListElement 1 eq if
+		<-l2dFog <-UFP_iListY GetListElement <-UFP_iListX 0 SetListElement
+
+		<-UFP_iCellX <-UFP_iCellY <-UFP_iCellX <-UFP_iCellY GetCellOccupiedCount 1 sub SetCellOccupiedCount
+
+		<-UFP_iListX <-UFP_iListY @FogImageRemove
+
+		<-UF_lCoordinatesToProcess <-UFP_iListX AppendToList
+		<-UF_lCoordinatesToProcess <-UFP_iListY AppendToList
+	endif
+
+	<-UFP_iCellX <-UFP_iCellY 1 TRUE GetAllUnitsInRange 0 do
+		->UFP_iUID
+
+		<-UFP_iUID GetUnitType "CRPLCORE" eq if
+			<-UFP_iUID "Tile.crpl" "A_bCanBeCarved" GetScriptVar if
+				<-UFP_iUID "Tile.crpl" "A_bMarkedForCarving" GetScriptVar if
+					<-UFP_iCellX <-UFP_iCellY @IsTileBlocked if
+						<-UFP_iUID CONST_CONNECTABLE FALSE SetUnitAttribute
+					else
+						<-UFP_iUID CONST_CONNECTABLE TRUE SetUnitAttribute
+					endif
+				endif
+			endif
+		endif
+	loop
+### ImageContainerManager:GetImageName()
+:GetFogImageString
+	->GFI_iY
+	->GFI_iX
+
+	"fog_" <-GFI_iX concat "_" concat <-GFI_iY concat return
+### /ImageContainerManager:GetImageName()
+:SnapCoordsToGrid
+	->SCT_iCellY
+	->SCT_iCellX
+
+	<-SCT_iCellX asint ->SCT_iCellX
+	<-SCT_iCellY asint ->SCT_iCellY
+
+	<-SCT_iCellX 3 div asint 3 mul 1 add
+	<-SCT_iCellY 3 div asint 3 mul 1 add
+	return
+:IsTileBlocked
+	->ITB_iY
+	->ITB_iX
+
+	<-ITB_iX <-ITB_iY @SnapCoordsToGrid ->ITB_iY ->ITB_iX
+
+	<-lRadarUIDs GetListCount 0 do
+		<-lRadarUIDs I GetListElement ->ITB_iRadarUID
+
+		<-ITB_iX 3 add <-ITB_iY <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt
+		<-ITB_iX 3 sub <-ITB_iY <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt or
+		<-ITB_iX <-ITB_iY 3 add <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt or
+		<-ITB_iX <-ITB_iY 3 sub <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt or
+		if
+			FALSE return
+		endif
+	loop
+
+	TRUE return

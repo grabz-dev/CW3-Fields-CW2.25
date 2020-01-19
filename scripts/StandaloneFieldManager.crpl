@@ -1,0 +1,525 @@
+# StandaloneFieldManager.crpl
+# Created on: 12/17/2019 2:06:54 AM
+# ------------------------------------------
+
+# The following image data is used to store information about fields
+# to persist through script recompiles:
+#  * Image name - Position
+#  * Position Z - Field strength (vector length)
+#  * Rotation - Field angle
+#  * Color B - 255 if regular field, anything else is pin field.
+
+# Notes:
+# Originally I wanted to use 254 for pin fields but save->load->recompile changes it to 253 for some reason.
+# Now, to be safe, I set fields a fair bit lower and assume any non-255 is pin.
+
+once
+    @Awake
+    @GameLoaded
+endonce
+
+#Fields visibility toggle
+<-G_bFieldsVisible <-G_bLastFieldsVisible neq if
+    <-G_bFieldsVisible not if
+        <-IC_l2dImageContainersC 0 do
+            <-IC_l2dImageContainersC I GetListElement 0 do
+                <-IC_l2dImageContainersC J GetListElement I GetListElement RemoveImages
+            loop
+        loop
+        <-IC_l2dImageContainersAC 0 do
+            <-IC_l2dImageContainersAC I GetListElement 0 do
+                <-IC_l2dImageContainersAC J GetListElement I GetListElement RemoveImages
+            loop
+        loop
+    else
+        MapHeight 0 do
+            MapWidth 0 do
+                <-IC_l2dFieldsCUD J GetListElement I GetListElement ->fCUD
+                <-IC_l2dFieldsCRL J GetListElement I GetListElement ->fCRL
+                <-IC_l2dFieldsCPin J GetListElement I GetListElement ->bCPin
+                <-IC_l2dFieldsACUD J GetListElement I GetListElement ->fACUD
+                <-IC_l2dFieldsACRL J GetListElement I GetListElement ->fACRL
+                <-IC_l2dFieldsACPin J GetListElement I GetListElement ->bACPin
+                #x1 y2 i3 i4 s5 b6    x y ud rl c pin
+                <-bCPin <-fCUD neq0 <-fCRL neq0 or or if
+                    I J <-fCUD <-fCRL "C" <-bCPin @FieldImageAdd
+                endif
+                <-bACPin <-fACUD neq0 <-fACRL neq0 or or if
+                    I J <-fACUD <-fACRL "AC" <-bACPin @FieldImageAdd
+                endif
+            loop
+
+            I 1 add 48 mod eq0 if
+                1 Delay
+            endif
+        loop
+    endif
+endif
+<-G_bFieldsVisible ->G_bLastFieldsVisible
+
+#Events are added to this list from the editor.
+<-G_lEditorEvents GetListCount 0 gt if
+    while <-G_lEditorEvents GetListCount 0 gt repeat
+        #Get coords
+        <-G_lEditorEvents 0 GetListElement ->iX
+        <-G_lEditorEvents 1 GetListElement ->iY
+
+        #Get new desired field cell
+        <-G_lEditorEvents 2 GetListElement ->iNewUD
+        <-G_lEditorEvents 3 GetListElement ->iNewRL
+
+        #"C", "AC"
+        <-G_lEditorEvents 4 GetListElement ->sC
+
+        #Whether or not this is a pin field
+        <-G_lEditorEvents 5 GetListElement ->bIsPin
+
+        #Whether or not we are erasing
+        <-G_lEditorEvents 6 GetListElement ->bIsErase
+
+        #If we set pin field, remove regular field
+        <-bIsPin if
+            0 ->iNewUD
+            0 ->iNewRL
+        endif
+        
+        <-iX <-iY <-iNewUD <-iNewRL <-sC <-bIsPin <-bIsErase @AddField
+
+        #Update images
+        <-bIsErase not <-iNewUD neq0 <-iNewRL neq0 or <-bIsPin or and if
+            <-iX <-iY <-iNewUD <-iNewRL <-sC <-bIsPin @FieldImageAdd
+        else
+            <-iX <-iY <-sC @FieldImageRemove
+        endif
+
+        <-G_lEditorEvents 0 RemoveListElement
+        <-G_lEditorEvents 0 RemoveListElement
+        <-G_lEditorEvents 0 RemoveListElement
+        <-G_lEditorEvents 0 RemoveListElement
+        <-G_lEditorEvents 0 RemoveListElement
+        <-G_lEditorEvents 0 RemoveListElement
+        <-G_lEditorEvents 0 RemoveListElement
+    endwhile
+endif
+
+# -
+# Arguments:
+# Result:
+:Awake
+    ClearTraceLog
+    TRUE OperateWhilePaused
+
+    TRUE ->IDENTIFIER_STANDALONEFIELDMANAGER
+
+    Self CONST_TAKEMAPSPACE 		FALSE SetUnitAttribute
+    Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS 	FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES 	FALSE SetUnitAttribute
+    Self "main" "NONE" SetImage
+
+# The crux of our script, because fields are reset on load, we do our primary initialization here.
+# -
+# Arguments:
+# Result:
+:GameLoaded
+    #If the map is too large, this method might fail to reach the end and be abruptly stopped by the opcode limit.
+    #If this happens, this error will linger. Otherwise, this error is removed at the very bottom of this function.
+    #Unfortunately we have delays, so this error will show up for a few frames every time.
+    ShowTraceLog
+    "UpperLeft" SetTextAnchor
+    255 0 0 255 SetTextColor
+    2.0 SetTextSize
+    "[ERROR]
+Opcode limit reached!
+This might happen if the map is too large.
+Please reduce the size of the map and recompile all scripts." SetText
+
+    #This part runs if the code was recompiled - most importantly this happens when finalizing a map.
+    <-GL_isCompiled eq0 if
+        FALSE ->G_bDebug
+
+        #Set by UIFieldOnOffToggle.crpl
+        TRUE ->G_bFieldsVisible
+        TRUE ->G_bLastFieldsVisible
+
+        #Note: UIEditorFieldMenu.crpl depends on those, don't mess if you don't know what you're doing
+        30000 ->FieldPower1
+        120000 ->FieldPower2
+        480000 ->FieldPower3
+        1920000 ->FieldPower4
+        7680000 ->FieldPower5
+
+        # iX, iY, iUD, iRL, sC
+        CreateList ->G_lEditorEvents
+
+        #Create field lists for internal keeping. We need this because we don't want to clash with fields built by shields etc.
+        CreateList ->IC_l2dFieldsCUD
+        CreateList ->IC_l2dFieldsCRL
+        CreateList ->IC_l2dFieldsCPin
+        CreateList ->IC_l2dFieldsACUD
+        CreateList ->IC_l2dFieldsACRL
+        CreateList ->IC_l2dFieldsACPin
+        MapHeight 0 do
+            <-IC_l2dFieldsCUD I CreateList SetListElement
+            <-IC_l2dFieldsCRL I CreateList SetListElement
+            <-IC_l2dFieldsCPin I CreateList SetListElement
+            <-IC_l2dFieldsACUD I CreateList SetListElement
+            <-IC_l2dFieldsACRL I CreateList SetListElement
+            <-IC_l2dFieldsACPin I CreateList SetListElement
+            MapWidth 0 do
+                <-IC_l2dFieldsCUD J GetListElement I 0 SetListElement
+                <-IC_l2dFieldsCRL J GetListElement I 0 SetListElement
+                <-IC_l2dFieldsCPin J GetListElement I FALSE SetListElement
+                <-IC_l2dFieldsACUD J GetListElement I 0 SetListElement
+                <-IC_l2dFieldsACRL J GetListElement I 0 SetListElement
+                <-IC_l2dFieldsACPin J GetListElement I FALSE SetListElement
+            loop
+        loop
+        1 Delay
+        
+        #The amount each field power will be divided by before being set to z-index.
+        #Avoid end values above and including 500 (5000000 / 10000 = 500 = bad)
+        #Also avoid using second decimal place and above due to potential compatibility differences between Windows and Linux.
+        100000.0 ->IC_fFieldPowerDataFactor
+
+        #If you have to change these, delete all containers from the map first
+        0 ->IC_iImageContainerEdgeC
+        20 ->IC_iImageContainerEdgeAC
+        -20 ->IC_iImageContainerEdgeHeight
+
+        #Field image containers
+        31 ->IC_iImageContainerListChunkSize
+        CreateList ->IC_l2dImageContainersC
+        CreateList ->IC_l2dImageContainersAC
+
+        #Capture a reference back to all of the fields image container cores
+        <-IC_iImageContainerEdgeC  <-IC_l2dImageContainersC  @FindFieldImageCores
+        <-IC_iImageContainerEdgeAC <-IC_l2dImageContainersAC @FindFieldImageCores
+        1 Delay
+
+        #Run through all field images, readd them to internal lists
+        <-IC_l2dFieldsCUD <-IC_l2dFieldsCRL <-IC_l2dFieldsCPin <-IC_l2dImageContainersC @RetrieveFieldsFromImages
+        1 Delay
+        <-IC_l2dFieldsACUD <-IC_l2dFieldsACRL <-IC_l2dFieldsACPin <-IC_l2dImageContainersAC @RetrieveFieldsFromImages
+        1 Delay
+    endif
+
+    #Run through the map size, in case its different, add container cores
+    MapHeight 1 sub <-IC_iImageContainerListChunkSize div asint 1 add 0 do
+        <-IC_l2dImageContainersC I GetListElement GetListCount eq0 if <-IC_l2dImageContainersC I CreateList SetListElement endif
+        <-IC_l2dImageContainersAC I GetListElement GetListCount eq0 if <-IC_l2dImageContainersAC I CreateList SetListElement endif
+
+        MapWidth 1 sub <-IC_iImageContainerListChunkSize div asint 1 add 0 do
+            I J <-IC_iImageContainerEdgeC  <-IC_l2dImageContainersC  @CreateFieldImageCoreIfNotExists
+            I J <-IC_iImageContainerEdgeAC <-IC_l2dImageContainersAC @CreateFieldImageCoreIfNotExists
+        loop
+    loop
+    1 Delay
+
+    #Reapply fields after game is reloaded
+    MapHeight 0 do
+        MapWidth 0 do
+            I J GetFieldCell ->iACRL ->iACUD ->iCRL ->iCUD
+
+            <-IC_l2dFieldsCUD J GetListElement I GetListElement <-iCUD add ->iCUD
+            <-IC_l2dFieldsCRL J GetListElement I GetListElement <-iCRL add ->iCRL
+            <-IC_l2dFieldsACUD J GetListElement I GetListElement <-iACUD add ->iACUD
+            <-IC_l2dFieldsACRL J GetListElement I GetListElement <-iACRL add ->iACRL
+
+            I J <-iCUD <-iCRL <-iACUD <-iACRL SetFieldCell
+
+            I J
+                <-IC_l2dFieldsCPin J GetListElement I GetListElement
+                <-IC_l2dFieldsACPin J GetListElement I GetListElement
+            SetPinFieldCell
+        loop
+    loop
+
+    TRUE ->GL_isCompiled
+
+    #In case the editor menu is culled by map resize, rebuild it
+    FALSE ->GL_bUIEditorFieldMenuFound
+	"IDENTIFIER_UIEDITORFIELDMENU" TRUE GetCoresWithVar 0 do
+		TRUE ->GL_bUIEditorFieldMenuFound
+		break
+	loop
+	<-GL_bUIEditorFieldMenuFound not if
+		"CRPLCORE" 0 0 CreateUnit "UIEditorFieldMenu.crpl" AddScriptToUnit
+	endif
+
+    FALSE ->GL_bUIFieldOnOffToggleFound
+	"IDENTIFIER_UIFIELDONOFFTOGGLE" TRUE GetCoresWithVar 0 do
+		TRUE ->GL_bUIFieldOnOffToggleFound
+		break
+	loop
+	<-GL_bUIFieldOnOffToggleFound not if
+		"CRPLCORE" 0 0 CreateUnit "UIFieldOnOffToggle.crpl" AddScriptToUnit
+	endif
+
+    #Function finished successfully, do not display error.
+    <-G_bDebug not if
+        HideTraceLog
+    endif
+    "" SetText
+
+# Add a field to a cell.
+# We don't interfere with fields created from other sources (shields, singularity)
+# so we first remove the field value from our list, then we add the new field value.
+# For pin fields, we set regular fields to zero.
+# x1 y2 i3 i4 s5 b6 b7 -
+# Arguments: 
+# Result: 
+:AddField
+    ->AF_bIsErase
+    ->AF_bIsPin
+    ->AF_sC
+    ->AF_iNewRL
+    ->AF_iNewUD
+    ->AF_iY
+    ->AF_iX
+
+    #A bit spaghetti, cut me some slack
+    <-AF_bIsErase if
+        0 ->AF_iNewRL
+        0 ->AF_iNewUD
+        FALSE ->AF_bIsPin
+    endif
+    
+    #Get real field cell, possibly affected by other factors
+    <-AF_iX <-AF_iY GetFieldCell
+        <-AF_sC "C" eq if
+            ->AF_iOtherRL ->AF_iOtherUD ->AF_iCurRL ->AF_iCurUD
+            <-IC_l2dFieldsCUD <-IC_l2dFieldsCRL 
+        else <-AF_sC "AC" eq if
+            ->AF_iCurRL ->AF_iCurUD ->AF_iOtherRL ->AF_iOtherUD
+            <-IC_l2dFieldsACUD <-IC_l2dFieldsACRL
+        endif endif
+    ->AF_l2dFieldsRL ->AF_l2dFieldsUD
+    
+    #Get pin field cell. We don't need to know the value of current pin field since it's just a boolean
+    <-AF_iX <-AF_iY GetPinFieldCell
+    <-AF_sC "C" eq if
+        ->AF_bOtherPin pop
+        <-IC_l2dFieldsCPin
+    else <-AF_sC "AC" eq if
+        pop ->AF_bOtherPin
+        <-IC_l2dFieldsACPin
+    endif endif
+    ->AF_l2dFieldsPin
+
+    #Get previous field cell
+    <-AF_l2dFieldsUD <-AF_iY GetListElement <-AF_iX GetListElement ->AF_iOldUD
+    <-AF_l2dFieldsRL <-AF_iY GetListElement <-AF_iX GetListElement ->AF_iOldRL
+
+    #Remove previous field cell from real cell field
+    #Add desired field cell to real cell field
+    <-AF_iCurUD <-AF_iOldUD sub <-AF_iNewUD add ->AF_iCurUD
+    <-AF_iCurRL <-AF_iOldRL sub <-AF_iNewRL add ->AF_iCurRL
+
+    #Note down the new custom field values
+    <-AF_l2dFieldsUD <-AF_iY GetListElement <-AF_iX <-AF_iNewUD SetListElement
+    <-AF_l2dFieldsRL <-AF_iY GetListElement <-AF_iX <-AF_iNewRL SetListElement
+    <-AF_l2dFieldsPin <-AF_iY GetListElement <-AF_iX <-AF_bIsPin SetListElement
+
+    #Finally set the field cell back
+    <-AF_iX <-AF_iY
+        <-AF_sC "C" eq if
+            <-AF_iCurUD <-AF_iCurRL <-AF_iOtherRL <-AF_iOtherUD 
+        else <-AF_sC "AC" eq if
+            <-AF_iOtherRL <-AF_iOtherUD <-AF_iCurUD <-AF_iCurRL
+        endif endif
+    SetFieldCell
+
+    #Set the pin cell field
+    <-AF_iX <-AF_iY 
+        <-AF_sC "C" eq if
+            <-AF_bIsPin <-AF_bOtherPin
+        else <-AF_sC "AC" eq if
+            <-AF_bOtherPin <-AF_bIsPin
+        endif endif
+    SetPinFieldCell
+
+# Add a field image to a specific cell.
+# If pin field, UD and RL strengths are not used.
+# x1 y2 i3 i4 s5 b6 -
+# Arguments: Cell coordinates, UD strength, RL strength, "C" or "AC", Is a pin field?
+# Result: 
+:FieldImageAdd
+    ->FIA_bIsPin
+    ->FIA_sC
+    ->FIA_iRL
+    ->FIA_iUD
+	->FIA_iY
+	->FIA_iX
+
+    <-FIA_sC "C" eq if
+        <-IC_l2dImageContainersC ->FIA_l2d
+    else <-FIA_sC "AC" eq if
+        <-IC_l2dImageContainersAC ->FIA_l2d
+    else return
+    endif endif
+
+    #Get non directional field power through vector length.
+    <-FIA_iRL 2 pow <-FIA_iUD 2 pow add sqrt ->FIA_fFieldPower
+
+    #Find which image container provided coords belong to.
+    <-FIA_iX <-IC_iImageContainerListChunkSize div asint ->FIA_iListX
+    <-FIA_iY <-IC_iImageContainerListChunkSize div asint ->FIA_iListY
+
+	<-FIA_l2d <-FIA_iListY GetListElement <-FIA_iListX GetListElement ->FIA_iImageContainerUID
+	<-FIA_iX <-FIA_iY @GetFieldImageString ->FIA_sImage
+    
+    #If pin field, just add pin field image.
+    #We assume pin field does not have a regular field alongside it.
+    <-FIA_iImageContainerUID <-FIA_sImage 
+        <-FIA_bIsPin if
+            <-FIA_sC "C" eq if "Custom74pp" else "Custom75pp" endif 
+        else
+            "Custom" 6 1 do
+                <-FIA_fFieldPower "FieldPower" I concat <-! lte if
+                    I break
+                endif
+            loop 75 add <-FIA_sC "AC" eq if 5 add endif concat "pp" concat
+        endif
+    SetImage
+
+    #Scale is not used for data - free to modify for looks.
+    <-FIA_iImageContainerUID <-FIA_sImage 0.28 dup SetImageScale
+    #Rotation must be the field direction.
+	<-FIA_iImageContainerUID <-FIA_sImage <-FIA_iUD neg <-FIA_iRL atan2 SetImageRotation
+    #Position Z is used for data, rest is free to modify.
+    <-FIA_iImageContainerUID <-FIA_sImage
+        <-FIA_iX <-FIA_sC "C" eq if <-IC_iImageContainerEdgeC else <-IC_iImageContainerEdgeAC endif sub <-FIA_iListX sub 8 mul <-FIA_sC "C" eq if 1.5 add else 1.5 sub endif
+        <-FIA_iY <-IC_iImageContainerEdgeHeight sub <-FIA_iListY sub 8 mul <-FIA_sC "C" eq if 1.5 add else 1.5 sub endif neg 
+        <-FIA_fFieldPower <-IC_fFieldPowerDataFactor div neg
+    SetImagePosition
+
+    #Color B is used for pin fields. 244 - pin field, 255 - regular field. Alpha is free to modify.
+    <-FIA_iImageContainerUID <-FIA_sImage
+        255 255
+        <-FIA_bIsPin if 244 else 255 endif
+        220
+    SetImageColor
+
+# Remove a field image from a specific cell.
+# x1 y2 s3 -
+# Arguments: Cell coordinates, "C" or "AC"
+# Result:
+:FieldImageRemove
+    ->FIR_sC
+	->FIR_iY
+	->FIR_iX
+
+    <-FIR_sC "C" eq if
+        <-IC_l2dImageContainersC ->FIR_l2d
+    else <-FIR_sC "AC" eq if
+        <-IC_l2dImageContainersAC ->FIR_l2d
+    else return
+    endif endif
+
+    #Find which image container provided coords belong to
+	<-FIR_iX <-IC_iImageContainerListChunkSize div asint ->FIR_iListX
+    <-FIR_iY <-IC_iImageContainerListChunkSize div asint ->FIR_iListY
+
+	<-FIR_l2d <-FIR_iListY GetListElement <-FIR_iListX GetListElement ->FIR_iImageContainerUID
+
+	<-FIR_iX <-FIR_iY @GetFieldImageString ->FIR_sImage
+	<-FIR_iImageContainerUID <-FIR_sImage "NONE" SetImage
+# Get field image name string.
+# x1 y2 - s3
+# Arguments: The target cell coordinates
+# Result: Image name string
+:GetFieldImageString
+    ->GFI_iY
+	->GFI_iX
+
+	"field_" <-GFI_iX concat "_" concat <-GFI_iY concat return
+
+# Search for all image containers and re-add their references to the list of containers after a recompile.
+# i1 l2d2 -
+# Arguments: The leftmost X coordinate where this group of container cores starts, the containers list
+# Result: 
+:FindFieldImageCores
+    ->FFI_l2dImageContainers
+    ->FFI_iEdge
+
+    #Height is determined, just check everything
+    0 <-IC_iImageContainerEdgeHeight do
+        #Check 18 cells after X edge
+        18 <-FFI_iEdge add <-FFI_iEdge do
+            I J GetUnitAt ->FFI_iUID
+
+            #Offset positional requirements to get list indexes
+            I <-FFI_iEdge sub ->FFI_iListX
+            J <-IC_iImageContainerEdgeHeight sub ->FFI_iListY
+
+            #Save the containers
+            <-FFI_l2dImageContainers <-FFI_iListY GetListElement GetListCount eq0 if <-FFI_l2dImageContainers <-FFI_iListY CreateList SetListElement endif
+            <-FFI_l2dImageContainers <-FFI_iListY GetListElement <-FFI_iListX <-FFI_iUID SetListElement
+        loop
+    loop
+
+# Check if a specific image container exists, if not, create one.
+# i1 i2 i3 l2d4 -
+# Arguments: Image container coordinates, the leftmost X coordinate where this group of container cores starts, the containers list
+# Result: 
+:CreateFieldImageCoreIfNotExists
+    ->CFI_l2dImageContainers
+    ->CFI_iEdge
+    ->CFI_iY
+    ->CFI_iX
+
+    #We make an assumption that a valid container can't be UID 0, that should never happen since we need this manager first.
+    <-CFI_l2dImageContainers <-CFI_iY GetListElement <-CFI_iX GetListElement 0 lte if
+        "CRPLCORE" 0 0 CreateUnit ->CFI_iUID
+        <-CFI_iUID CONST_COORDX <-CFI_iEdge <-CFI_iX add SetUnitAttribute
+        <-CFI_iUID CONST_COORDY <-IC_iImageContainerEdgeHeight <-CFI_iY add SetUnitAttribute
+        <-CFI_iUID "ImageContainerPersistentField.crpl" AddScriptToUnit
+        <-CFI_l2dImageContainers <-CFI_iY GetListElement <-CFI_iX <-CFI_iUID SetListElement
+    endif
+
+# Run through all images based on expected image names from image containers.
+# Based on data saved in them, add fields to internal lists.
+# l2d1 l2d2 l2d3 l2d4 - 
+# Arguments: UD, RL and Pin containers, then image containers
+# Result:
+:RetrieveFieldsFromImages
+    ->RFF_l2dImageContainers
+    ->RFF_l2dFieldsPin
+    ->RFF_l2dFieldsRL
+    ->RFF_l2dFieldsUD
+
+    MapHeight 0 do
+        MapWidth 0 do
+            #Get image container corresponding to current coordinates
+            <-RFF_l2dImageContainers
+                J <-IC_iImageContainerListChunkSize div asint GetListElement
+                I <-IC_iImageContainerListChunkSize div asint GetListElement
+            ->iUID
+
+            I J @GetFieldImageString ->sImageName
+            #If scale is 0, image does not exist on this slot - no field
+            <-iUID <-sImageName 0 GetImageScaleX neq0 if
+                #Retrieve data
+                <-iUID <-sImageName GetImagePosition ->fZ pop pop
+                <-iUID <-sImageName GetImageRotation ->fAngle
+                <-iUID <-sImageName GetImageColor pop ->iB pop pop
+
+                #Calculate power
+                <-fAngle cos <-fZ mul <-IC_fFieldPowerDataFactor mul asint neg ->iRL
+                <-fAngle sin <-fZ mul <-IC_fFieldPowerDataFactor mul asint ->iUD
+
+                #ShowTraceLog
+                #<-iRL <-iUD trace 
+
+                #Save field
+                <-iB 255 neq if
+                    <-RFF_l2dFieldsPin J GetListElement I TRUE SetListElement
+                else
+                    <-RFF_l2dFieldsUD J GetListElement I <-iUD SetListElement
+                    <-RFF_l2dFieldsRL J GetListElement I <-iRL SetListElement
+                endif
+            endif
+        loop
+    loop

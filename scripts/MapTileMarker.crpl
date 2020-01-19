@@ -1,0 +1,141 @@
+# MapTileMarker.crpl
+# Created on: 7/30/2018 12:44:41 PM
+# ------------------------------------------
+once
+	FALSE ->bMarking
+	0 ->iMarkType #0 or 1
+
+	@awake
+endonce
+
+FALSE ->bShiftHeld
+
+"LeftShift" GetKey "RightShift" GetKey or if
+	TRUE ->bShiftHeld
+endif
+
+#If the mouse is pressed down, check the tile under it.
+#If there is a tile, begin marking.
+#If the tile was already marked, begin unmarking.
+0 GetMouseButtonDown if
+	@CheckInput
+endif
+
+#Releasing the mouse button will stop the marking routine.
+0 GetMouseButtonUp if
+	FALSE ->bMarking
+endif
+
+<-bMarking if
+	@Mark
+endif
+
+:awake
+	TRUE OperateWhilePaused
+	TRUE ->IDENTIFIER_TILEMARKER
+:CheckInput
+	GetMouseCell 1 TRUE GetAllUnitsInRange 0 do
+		->iUID
+		<-iUID GetUnitType "CRPLCORE" eq if
+			<-iUID "Tile.crpl" "A_bCanBeCarved" GetScriptVar if
+				<-iUID "Tile.crpl" "A_bMarkedForCarving" GetScriptVar if
+					<-iUID "Tile.crpl" "A_bPlaceSpecialWhenCarved" GetScriptVar if
+						<-bShiftHeld if
+							0 ->iMarkType
+						else
+							1 ->iMarkType
+						endif
+					else
+						<-bShiftHeld if
+							2 ->iMarkType
+						else
+							0 ->iMarkType
+						endif
+					endif
+				else
+					<-bShiftHeld if
+						2 ->iMarkType
+					else
+						1 ->iMarkType
+					endif
+				endif
+
+				TRUE ->bMarking
+			endif
+		endif
+	loop
+:Mark
+	GetMouseCell ->iMouseCellY ->iMouseCellX
+
+	<-iMouseCellX <-iMouseCellY 1 TRUE GetAllUnitsInRange 0 do
+		->iUID
+
+		<-iUID GetUnitType "CRPLCORE" eq if
+			<-iUID "Tile.crpl" "A_bCanBeCarved" GetScriptVar if
+				<-iMarkType 2 eq if
+					<-iUID "Tile.crpl" "A_bMarkedForCarving" TRUE SetScriptVar
+					<-iUID "Tile.crpl" "A_bPlaceSpecialWhenCarved" TRUE SetScriptVar
+
+					<-iUID "Tile.crpl" "sSpecial" GetScriptVar "NONE" eq if
+						<-iUID "x" "Custom0" SetImage
+					else
+						<-iUID "x" "Custom2" SetImage
+					endif
+
+					<-iMouseCellX <-iMouseCellY @IsTileBlocked not if
+						<-iUID CONST_CONNECTABLE TRUE SetUnitAttribute
+					endif
+				#Process if the marking type is 1 and the tile is not marked for carving, so we mark.
+				else <-iMarkType 1 eq if
+					<-iUID "Tile.crpl" "A_bMarkedForCarving" TRUE SetScriptVar
+
+					<-iUID "x" "Custom1" SetImage
+					<-iUID "Tile.crpl" "A_bPlaceSpecialWhenCarved" FALSE SetScriptVar
+
+					<-iMouseCellX <-iMouseCellY @IsTileBlocked not if
+						<-iUID CONST_CONNECTABLE TRUE SetUnitAttribute
+					endif
+				#Otherwise process if the marking type is 0 and the tile is marked for carving, so we unmark.
+				else <-iMarkType 0 eq if
+					<-iUID "x" "NONE" SetImage
+					<-iUID "Tile.crpl" "A_bMarkedForCarving" FALSE SetScriptVar
+					<-iUID CONST_CONNECTABLE FALSE SetUnitAttribute
+				endif endif endif
+			endif
+		endif
+	loop
+:IsTileBlocked
+	->ITB_iY
+	->ITB_iX
+
+	<-ITB_iX <-ITB_iY @SnapCoordsToGrid ->ITB_iY ->ITB_iX
+
+	Self "MapFogManager.crpl" "lRadarUIDs" GetScriptVar ->ITB_lRadarUIDs
+
+	<-ITB_lRadarUIDs eq0 if
+		TRUE return
+	endif
+
+	<-ITB_lRadarUIDs GetListCount 0 do
+		<-ITB_lRadarUIDs I GetListElement ->ITB_iRadarUID
+
+		<-ITB_iX 3 add <-ITB_iY <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt
+		<-ITB_iX 3 sub <-ITB_iY <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt or
+		<-ITB_iX <-ITB_iY 3 add <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt or
+		<-ITB_iX <-ITB_iY 3 sub <-ITB_iRadarUID CONST_COORDX GetUnitAttribute <-ITB_iRadarUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain GetListCount 0 gt or
+		if
+			FALSE return
+		endif
+	loop
+
+	TRUE return
+:SnapCoordsToGrid
+	->SCT_iCellY
+	->SCT_iCellX
+
+	<-SCT_iCellX asint ->SCT_iCellX
+	<-SCT_iCellY asint ->SCT_iCellY
+
+	<-SCT_iCellX 3 div asint 3 mul 1 add
+	<-SCT_iCellY 3 div asint 3 mul 1 add
+	return

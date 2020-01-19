@@ -1,0 +1,167 @@
+# MapCommandNodeManager.crpl
+# Created on: 8/14/2018 8:32:15 AM
+# ------------------------------------------
+once
+	0 ->iLastCommandNodeCount
+
+	CreateList ->lCommandNodesDropping #{ [UID, iTimer] }
+	CreateList ->lCommandNodesOperational #{ [UID, iLastX, iLastY] }
+	CreateList ->lCommandNodesAscending #{ [UID] }
+
+	2 ->iCommandNodesDroppingVariableCount
+	3 ->iCommandNodesOperationalVariableCount
+	1 ->iCommandNodesAscendingVariableCount
+
+	FALSE ->bTrace
+
+	@awake
+endonce
+
+GetCommandNodeCount ->iCommandNodeCount
+FALSE ->bStateChange
+CreateList ->lNewlyOperationalCommandNodes
+CreateList ->lNewlyAscendingCommandNodes
+CreateList ->lNewlyMovedCommandNodes
+
+<-iCommandNodeCount <-iLastCommandNodeCount neq if
+	TRUE ->bStateChange
+endif
+
+#Look through all ascending CN's. If any of them is destroyed, they are no longer in play.
+0 ->iI
+while <-iI <-lCommandNodesAscending GetListCount lt repeat
+	<-lCommandNodesAscending <-iI GetListElement ->iUID
+
+	<-iUID CONST_ISDESTROYED GetUnitAttribute if
+		TRUE ->bStateChange
+		<-iCommandNodesAscendingVariableCount 0 do
+			<-lCommandNodesAscending <-iI RemoveListElement
+		loop
+	else
+		<-iI <-iCommandNodesAscendingVariableCount add ->iI
+	endif
+endwhile
+
+#Look through all operational CN's. If any of them is no longer connectable, that means it has been sent back to orbit, therefore it's ascending.
+0 ->iI
+while <-iI <-lCommandNodesOperational GetListCount lt repeat
+	<-lCommandNodesOperational <-iI GetListElement ->iUID
+	<-lCommandNodesOperational <-iI 1 add GetListElement ->iLastX
+	<-lCommandNodesOperational <-iI 2 add GetListElement ->iLastY
+
+	<-iUID CONST_COORDX GetUnitAttribute ->iCurX
+	<-iUID CONST_COORDY GetUnitAttribute ->iCurY
+
+	<-iCurX <-iLastX neq <-iCurY <-iLastY neq or if
+		TRUE ->bStateChange
+		<-lNewlyMovedCommandNodes <-iUID AppendToList
+	endif
+
+	<-lCommandNodesOperational <-iI 1 add <-iCurX SetListElement
+	<-lCommandNodesOperational <-iI 2 add <-iCurY SetListElement
+
+	<-iUID CONST_CONNECTABLE GetUnitAttribute not if #Not connectable when sent back to orbit.
+		TRUE ->bStateChange
+		<-iCommandNodesOperationalVariableCount 0 do
+			<-lCommandNodesOperational <-iI RemoveListElement
+		loop
+
+		<-lCommandNodesAscending <-iUID AppendToList
+		<-lNewlyAscendingCommandNodes <-iUID AppendToList
+	else
+		<-iI <-iCommandNodesOperationalVariableCount add ->iI
+	endif
+endwhile
+
+#Look through all dropping CN's. If the timer has reached 90 frames, that means it is now operational.
+0 ->iI
+while <-iI <-lCommandNodesDropping GetListCount lt repeat
+	<-lCommandNodesDropping <-iI       GetListElement ->iUID
+	<-lCommandNodesDropping <-iI 1 add GetListElement ->iTimer
+
+	<-iTimer 1 add ->iTimer
+	<-lCommandNodesDropping <-iI 1 add <-iTimer SetListElement
+
+
+	<-iTimer 89 gte if #Not connectable when sent back to orbit.
+		TRUE ->bStateChange
+
+		<-iCommandNodesDroppingVariableCount 0 do
+			<-lCommandNodesDropping <-iI RemoveListElement
+		loop
+
+		<-lCommandNodesOperational <-iUID AppendToList
+		<-lCommandNodesOperational <-iUID CONST_COORDX GetUnitAttribute AppendToList
+		<-lCommandNodesOperational <-iUID CONST_COORDY GetUnitAttribute AppendToList
+		<-lNewlyOperationalCommandNodes <-iUID AppendToList
+	else
+		<-iI <-iCommandNodesDroppingVariableCount add ->iI
+	endif
+endwhile
+
+#If a change was detected in any CN state, we'll run over them all to see if a new one was added. If it was, that means it's ascending.
+<-bStateChange if
+	CreateList ->lCommandNodesTemporary
+
+	#Find all command nodes.
+	0 0 9999 TRUE GetAllUnitsInRange 0 do
+		->iUID
+
+		<-iUID GetUnitType "COMMANDNODE" eq if
+			<-lCommandNodesTemporary <-iUID AppendToList
+		endif
+	loop
+
+	FALSE ->bAlreadyExists
+
+	#Go over all command nodes.
+	0 ->iI
+	while <-iI <-lCommandNodesTemporary GetListCount lt repeat
+		<-lCommandNodesTemporary <-iI GetListElement ->iUID
+
+		#Because GAUIR picks up dropping CN's, we check if it already exists there.
+		0 ->iJ
+		while <-iJ <-lCommandNodesDropping GetListCount lt repeat
+			<-lCommandNodesDropping <-iJ GetListElement <-iUID eq if
+				TRUE ->bAlreadyExists
+				break
+			endif
+
+			<-iJ <-iCommandNodesDroppingVariableCount add ->iJ
+		endwhile
+
+		<-bAlreadyExists not if
+			#Because GAUIR picks up operational CN's, we check if it already exists there.
+			0 ->iJ
+			while <-iJ <-lCommandNodesOperational GetListCount lt repeat
+				<-lCommandNodesOperational <-iJ GetListElement <-iUID eq if
+					TRUE ->bAlreadyExists
+					break
+				endif
+
+				<-iJ <-iCommandNodesOperationalVariableCount add ->iJ
+			endwhile
+		endif
+
+		#If it does not exist, we add it with timer 0.
+		<-bAlreadyExists not if
+			<-lCommandNodesDropping <-iUID AppendToList
+			<-lCommandNodesDropping 0 AppendToList
+		endif
+
+		<-iI 1 add ->iI
+	endwhile
+endif
+
+<-bTrace if
+	ShowTraceLog
+	ClearTraceLog
+	<-lCommandNodesDropping Trace
+	<-lCommandNodesOperational Trace
+	<-lCommandNodesAscending Trace
+endif
+
+<-iCommandNodeCount ->iLastCommandNodeCount
+:awake
+	FALSE OperateWhilePaused
+	TRUE ->IDENTIFIER_MAPCOMMANDNODEMANAGER

@@ -1,0 +1,38 @@
+# CustomUnitBase.crpl
+# Created on: 7/28/2018 4:58:49 PM
+# ------------------------------------------
+once
+	@awake
+endonce
+
+:awake
+	FALSE OperateWhilePaused
+	TRUE ->IDENTIFIER_CUSTOMUNITBASE
+
+	Self CONST_CREATEPZ FALSE SetUnitAttribute
+
+	FALSE SetPopupTextAlwaysVisible
+	0 SetPopupTextX
+	15 SetPopupTextY
+
+	@SnapToGrid
+	@RemoveDuplicate
+:SnapToGrid
+	CurrentCoords ->STG_iCellY ->STG_iCellX
+
+	<-STG_iCellX asint ->STG_iCellX
+	<-STG_iCellY asint ->STG_iCellY
+
+	<-STG_iCellX 3 div asint 3 mul 1 add <-STG_iCellY 3 div asint 3 mul 1 add SetCurrentCoords
+:RemoveDuplicate
+	CurrentCoords ->RD_iCellY ->RD_iCellX
+
+	<-RD_iCellX <-RD_iCellY 1 TRUE GetAllUnitsInRange 0 do
+		->RD_iUID
+		
+		<-RD_iUID Self neq if
+			<-RD_iUID "CustomUnitBase.crpl" "IDENTIFIER_CUSTOMUNITBASE" GetScriptVar if
+				<-RD_iUID 0 Destroy
+			endif
+		endif
+	loop

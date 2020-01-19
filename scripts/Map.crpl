@@ -1,0 +1,164 @@
+$iWindRL:0
+$iWindUD:10000
+
+$iCreeperColorR:-1
+$iCreeperColorG:-1
+$iCreeperColorB:-1
+$iACColorR:-1
+$iACColorG:-1
+$iACColorB:-1
+
+once
+	@awake
+endonce
+
+<-iWindRL <-iWindUD SetWind
+
+:awake
+	TRUE OperateWhilePaused
+	TRUE ->IDENTIFIER_MAP
+
+	0.2 SetCreeperFlowRate
+	1000 SetCreeperEvaporationLimit
+
+	Self CONST_TAKEMAPSPACE 		FALSE SetUnitAttribute
+    Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS 	FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES 	FALSE SetUnitAttribute
+
+    Self "main" "Custom0_256" SetImage
+	Self "main" MapWidth 3 div SetImageScaleX
+	Self "main" MapHeight 3 div SetImageScaleY
+	Self "main" MapWidth 4 mul 12 add SetImagePositionX
+	Self "main" MapHeight 4 mul 12 add neg SetImagePositionY
+	Self "main" 2 SetImagePositionZ
+
+	@UpdateCreeperColors
+:gameloaded
+	@RefreshTerrain
+
+	FALSE ->GL_bUIVersionNumberFound
+	"IDENTIFIER_UIVERSIONNUMBER" TRUE GetCoresWithVar 0 do
+		TRUE ->GL_bUIVersionNumberFound
+		break
+	loop
+	<-GL_bUIVersionNumberFound not if
+		"CRPLCORE" 0 0 CreateUnit "UIVersionNumber.crpl" AddScriptToUnit
+	endif
+
+	FALSE ->GL_bUIWindIndicatorFound
+	"IDENTIFIER_UIWINDINDICATOR" TRUE GetCoresWithVar 0 do
+		TRUE ->GL_bUIWindIndicatorFound
+		break
+	loop
+	<-GL_bUIWindIndicatorFound not if
+		"CRPLCORE" 0 0 CreateUnit "UIWindIndicator.crpl" AddScriptToUnit
+	endif
+
+	FALSE ->GL_bUIHelpButtonFound
+	"IDENTIFIER_UIHELPBUTTON" TRUE GetCoresWithVar 0 do
+		TRUE ->GL_bUIHelpButtonFound
+		break
+	loop
+	<-GL_bUIHelpButtonFound not if
+		"CRPLCORE" 0 0 CreateUnit "UIHelpButton.crpl" AddScriptToUnit
+	endif
+
+	FALSE ->GL_bUIEditorFieldMenuFound
+	"IDENTIFIER_UIEDITORFIELDMENU" TRUE GetCoresWithVar 0 do
+		TRUE ->GL_bUIEditorFieldMenuFound
+		break
+	loop
+	<-GL_bUIEditorFieldMenuFound not if
+		"CRPLCORE" 0 0 CreateUnit "UIEditorFieldMenu.crpl" AddScriptToUnit
+	endif
+
+	FALSE ->GL_bUIFieldOnOffToggleFound
+	"IDENTIFIER_UIFIELDONOFFTOGGLE" TRUE GetCoresWithVar 0 do
+		TRUE ->GL_bUIFieldOnOffToggleFound
+		break
+	loop
+	<-GL_bUIFieldOnOffToggleFound not if
+		"CRPLCORE" 0 0 CreateUnit "UIFieldOnOffToggle.crpl" AddScriptToUnit
+	endif
+
+	@UpdateCreeperColors
+:SnapCoordsToGrid
+	->SCT_iCellY
+	->SCT_iCellX
+
+	<-SCT_iCellX 3 mod eq0 if
+		<-SCT_iCellX 1 add ->SCT_iCellX
+	else <-SCT_iCellX 1 add 3 mod eq0 if
+		<-SCT_iCellX 1 sub ->SCT_iCellX
+	endif endif
+	
+	<-SCT_iCellY 3 mod eq0 if
+		<-SCT_iCellY 1 add ->SCT_iCellY
+	else <-SCT_iCellY 1 add 3 mod eq0 if
+		<-SCT_iCellY 1 sub ->SCT_iCellY
+	endif endif
+
+	<-SCT_iCellX <-SCT_iCellY return
+:RefreshTerrain
+	0 MapHeight 1 sub @SnapCoordsToGrid ->RT_iY2 ->RT_iY1
+	while <-RT_iY1 <-RT_iY2 lte repeat
+		0 MapWidth 1 sub @SnapCoordsToGrid ->RT_iX2 ->RT_iX1
+		while <-RT_iX1 <-RT_iX2 lte repeat
+			FALSE ->RT_bTileFound
+
+			<-RT_iX1 <-RT_iY1 0 TRUE GetAllUnitsInRange 0 do
+				->RT_iUID
+
+				<-RT_iUID "Tile.crpl" "IDENTIFIER_TILE" GetScriptVar if
+					TRUE ->RT_bTileFound
+					break
+				endif
+			loop
+
+			<-RT_bTileFound if
+				<-RT_iX1 <-RT_iY1 				10 SetTerrain
+				<-RT_iX1 1 add <-RT_iY1 		10 SetTerrain
+				<-RT_iX1 1 sub <-RT_iY1 		10 SetTerrain
+				<-RT_iX1 <-RT_iY1 1 add 		10 SetTerrain
+				<-RT_iX1 <-RT_iY1 1 sub 		10 SetTerrain
+				<-RT_iX1 1 add <-RT_iY1 1 add 	10 SetTerrain
+				<-RT_iX1 1 sub <-RT_iY1 1 add 	10 SetTerrain
+				<-RT_iX1 1 add <-RT_iY1 1 sub 	10 SetTerrain
+				<-RT_iX1 1 sub <-RT_iY1 1 sub 	10 SetTerrain
+			else
+				<-RT_iX1 <-RT_iY1 				1 SetTerrain
+				<-RT_iX1 1 add <-RT_iY1 		1 SetTerrain
+				<-RT_iX1 1 sub <-RT_iY1 		1 SetTerrain
+				<-RT_iX1 <-RT_iY1 1 add 		1 SetTerrain
+				<-RT_iX1 <-RT_iY1 1 sub 		1 SetTerrain
+				<-RT_iX1 1 add <-RT_iY1 1 add 	1 SetTerrain
+				<-RT_iX1 1 sub <-RT_iY1 1 add 	1 SetTerrain
+				<-RT_iX1 1 add <-RT_iY1 1 sub 	1 SetTerrain
+				<-RT_iX1 1 sub <-RT_iY1 1 sub 	1 SetTerrain
+			endif
+
+			<-RT_iX1 3 add ->RT_iX1
+		endwhile
+		<-RT_iY1 3 add ->RT_iY1
+	endwhile
+:UpdateCreeperColors
+	#Update Creeper Colors
+	<-iCreeperColorR 0 lt <-iCreeperColorR 255 gt or
+	<-iCreeperColorG 0 lt <-iCreeperColorG 255 gt or or 
+	<-iCreeperColorB 0 lt <-iCreeperColorB 255 gt or or if
+		15 ->iCreeperColorR
+		28 ->iCreeperColorG
+		255 ->iCreeperColorB
+	endif
+
+	<-iACColorR 0 lt <-iACColorR 255 gt or
+	<-iACColorG 0 lt <-iACColorG 255 gt or or 
+	<-iACColorB 0 lt <-iACColorB 255 gt or or if
+		255 ->iACColorR
+		255 ->iACColorG
+		255 ->iACColorB
+	endif
+
+	<-iCreeperColorR <-iCreeperColorG <-iCreeperColorB <-iACColorR <-iACColorG <-iACColorB SetCreeperColors

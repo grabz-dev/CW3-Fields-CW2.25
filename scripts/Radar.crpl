@@ -1,0 +1,28 @@
+# Radar.crpl
+# Created on: 8/10/2018 4:55:02 AM
+# ------------------------------------------
+once
+	@awake
+endonce
+
+<-bExists not if
+	Self 0 Destroy
+endif
+
+IsPaused not if
+	CurrentCoords GetCreeper 0 gt if
+		Self 2 Destroy
+	endif
+endif
+
+:awake
+	TRUE OperateWhilePaused
+	TRUE ->IDENTIFIER_RADAR
+
+	Self CONST_TAKEMAPSPACE         FALSE SetUnitAttribute
+    Self CONST_CREATEPZ             FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS    FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY     FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES     FALSE SetUnitAttribute
+    #Self CONST_DESTROYMODE 			0 SetUnitAttribute
+    Self "main" "Custom4" SetImage

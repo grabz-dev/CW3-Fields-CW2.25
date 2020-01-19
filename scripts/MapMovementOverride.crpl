@@ -1,0 +1,563 @@
+# MapMovementOverride.crpl
+# Created on: 8/7/2018 10:23:55 PM
+# ------------------------------------------
+0 GetMouseButtonDown if
+	TRUE ->bMouseButtonDown
+endif
+
+0 GetMouseButtonUp if
+	TRUE ->bMouseButtonUp
+endif
+
+once
+	FALSE ->bTrace
+	@awake
+
+	#This is a list of all player units active in play.
+	#Destroyed units are removed.
+	CreateList ->lAllPlayerUnits #{ [iUID, fPixelX, fPixelY, fLastPixelX, fLastPixelY, iTargetDeterminantState, fPixelX1, fPixelX2, fTargetAngle1, fPixelX2, fPixelY2, fTargetAngle2, iTargetX, iTargetY, lTargetPath, bShouldRepath, iAdditionalMovementLoops, fSpeed] }
+
+	18 ->iAllPlayerUnitsVariableCount
+endonce
+
+IsPaused if
+	return
+endif
+
+#Iterate over all saved player units.
+#If they're destroyed, remove them from the list.
+<-lAllPlayerUnits GetListCount ->iLength
+0 ->iI
+while <-iI <-iLength lt repeat
+	<-lAllPlayerUnits <-iI GetListElement ->iUID
+
+	<-iUID CONST_ISDESTROYED GetUnitAttribute if
+		<-iAllPlayerUnitsVariableCount 0 do
+			<-lAllPlayerUnits <-iI RemoveListElement
+		loop
+
+		<-iLength <-iAllPlayerUnitsVariableCount sub ->iLength
+	else
+		<-iI <-iAllPlayerUnitsVariableCount add ->iI
+	endif
+endwhile
+
+<-bTrace if
+	ShowTraceLog
+	ClearTraceLog
+	<-lAllPlayerUnits GetListCount ->iLength
+	0 ->iI
+	while <-iI <-iLength lt repeat
+		<-lAllPlayerUnits <-iI GetListElement ->iUID
+
+		<-iUID Trace
+
+		<-iI <-iAllPlayerUnitsVariableCount add ->iI
+	endwhile
+endif
+
+#Iterate over all saved player units.
+#Update all saved last positions.
+#This runs at the very end.
+<-lAllPlayerUnits GetListCount ->iLength
+0 ->iI
+while <-iI <-iLength lt repeat
+	<-lAllPlayerUnits <-iI GetListElement ->iUID
+	<-lAllPlayerUnits <-iI 1 add GetListElement ->fPixelX
+	<-lAllPlayerUnits <-iI 2 add GetListElement ->fPixelY
+	<-lAllPlayerUnits <-iI 3 add GetListElement ->fLastPixelX
+	<-lAllPlayerUnits <-iI 4 add GetListElement ->fLastPixelY
+	<-lAllPlayerUnits <-iI 5 add GetListElement ->iTargetDeterminantState
+	<-lAllPlayerUnits <-iI 6 add GetListElement ->fPixelX1
+	<-lAllPlayerUnits <-iI 7 add GetListElement ->fPixelY1
+	<-lAllPlayerUnits <-iI 8 add GetListElement ->fTargetAngle1
+	<-lAllPlayerUnits <-iI 9 add GetListElement ->fPixelX2
+	<-lAllPlayerUnits <-iI 10 add GetListElement ->fPixelY2
+	<-lAllPlayerUnits <-iI 11 add GetListElement ->fTargetAngle2
+	<-lAllPlayerUnits <-iI 12 add GetListElement ->iTargetX
+	<-lAllPlayerUnits <-iI 13 add GetListElement ->iTargetY
+	<-lAllPlayerUnits <-iI 14 add GetListElement ->lTargetPath
+	<-lAllPlayerUnits <-iI 15 add GetListElement ->bShouldRepath
+	<-lAllPlayerUnits <-iI 16 add GetListElement ->iAdditionalMovementLoops
+	<-lAllPlayerUnits <-iI 17 add GetListElement ->fSpeed
+
+	<-fPixelX ->fLastPixelXTemp
+	<-fPixelY ->fLastPixelYTemp
+
+	<-iUID CONST_PIXELCOORDX GetUnitAttribute ->fPixelAutoStepX
+	<-iUID CONST_PIXELCOORDY GetUnitAttribute ->fPixelAutoStepY
+
+	<-iUID CONST_ISLANDED GetUnitAttribute if
+		0 ->iTargetDeterminantState
+	else
+		#A player action (like mouse click) can be a trigger for all units to receive the bShouldRepath flag.
+		#If our state is 2, only then do we allow a repath.
+		#This is because movement is breaking if a repath is done in the middle of figuring out the target position.
+		#Let it do its thing first then do it again.
+		<-bShouldRepath if
+			<-iTargetDeterminantState -1 eq
+			<-iTargetDeterminantState 3 eq or
+			<-iTargetDeterminantState 4 eq or if
+				FALSE ->bShouldRepath
+				-1 ->iTargetDeterminantState
+				3 ->iAdditionalMovementLoops
+			endif
+		endif
+
+		<-iTargetDeterminantState -1 eq if
+			0 ->iTargetDeterminantState
+		else <-iTargetDeterminantState 0 eq if
+			#STATE 0
+			#The unit is immobile.
+			#If the unit starts moving (lastPixel not equal to pixel), we calculate the angle of that direction,
+			#move the unit slightly to the side,
+			#and change the state to 1.
+			<-fPixelX <-fPixelAutoStepX neq <-fPixelY <-fPixelAutoStepY neq or if
+				1 ->iTargetDeterminantState
+
+				<-fPixelAutoStepY <-fPixelY sub <-fPixelAutoStepX <-fPixelX sub atan2 ->fTargetAngle1
+
+				<-fPixelX <-fPixelY <-fPixelAutoStepX <-fPixelAutoStepY Distance ->fSpeed
+
+				<-fPixelX ->fPixelX1
+				<-fPixelY ->fPixelY1
+
+				<-fPixelX <-fTargetAngle1 PI 2.0 div sub cos 2.0 mul add ->fPixelX
+				<-fPixelY <-fTargetAngle1 PI 2.0 div sub sin 2.0 mul add ->fPixelY
+
+				<-fPixelX ->fPixelX2
+				<-fPixelY ->fPixelY2
+			endif
+		else <-iTargetDeterminantState 1 eq if
+			#STATE 1
+			#Previous state has moved the unit and the unit has already moved a frame again,
+			#so we take the angle of the new direction and move the unit back.
+			#Now we can calculate the line intersection of the two directional vectors,
+			#to figure out where the unit's target cell.
+
+			2 ->iTargetDeterminantState
+
+			<-fPixelAutoStepY <-fPixelY sub <-fPixelAutoStepX <-fPixelX sub atan2 ->fTargetAngle2
+
+			<-fPixelX1 ->fPixelX
+			<-fPixelY1 ->fPixelY
+
+			<-fPixelX1 <-fPixelY1 <-fTargetAngle1 <-fPixelX2 <-fPixelY2 <-fTargetAngle2 @LineIntersection ->iTargetY ->iTargetX
+		else <-iTargetDeterminantState 2 eq if
+			3 ->iTargetDeterminantState
+
+			<-lTargetPath <-fPixelX <-fPixelY PixelToCell <-iTargetX <-iTargetY @GetProcessedPath ->lTargetPath
+
+			<-lTargetPath GetListCount eq0 if
+				TRUE ->bShouldRepath
+				-1 ->iTargetDeterminantState #as state 3 executes on the same frame as 2, we do this to skip the movement frame (we don't want the unit to move)
+			endif
+		endif endif endif endif
+
+		<-iTargetDeterminantState 3 eq if
+			#STATE 3
+			#Move the unit along the coordinate list.
+			#If the unit has passed the next coordinate, we remove it from the list to go to the next one.
+			#If there's no more coordinates to go to, move to state 4.
+			<-iAdditionalMovementLoops 1 add 0 do
+				<-lTargetPath GetListCount 0 gt if
+					<-lTargetPath 0 GetListElement <-lTargetPath 1 GetListElement CellToPixel ->fCurrentTargetY ->fCurrentTargetX
+
+					<-fCurrentTargetY <-fPixelY sub <-fCurrentTargetX <-fPixelX sub atan2 ->fCurrentTargetAngle
+
+					<-fCurrentTargetAngle cos <-fSpeed mul ->fCurrentTargetVectorX
+					<-fCurrentTargetAngle sin <-fSpeed mul ->fCurrentTargetVectorY
+
+					<-fPixelX <-fCurrentTargetVectorX add ->fPixelX
+					<-fPixelY <-fCurrentTargetVectorY add ->fPixelY
+
+					TRUE ->bCurrentTargetPassedX
+					TRUE ->bCurrentTargetPassedY
+
+					<-fPixelX <-fCurrentTargetVectorX add ->fNextPixelX
+					<-fPixelY <-fCurrentTargetVectorY add ->fNextPixelY
+
+					<-fCurrentTargetVectorX 0 gt if
+						<-fNextPixelX <-fCurrentTargetX lt if
+							FALSE ->bCurrentTargetPassedX
+						endif
+					else <-fCurrentTargetVectorX 0 lt if
+						<-fNextPixelX <-fCurrentTargetX gt if
+							FALSE ->bCurrentTargetPassedX
+						endif
+					endif endif
+
+					<-fCurrentTargetVectorY 0 gt if
+						<-fNextPixelY <-fCurrentTargetY lt if
+							FALSE ->bCurrentTargetPassedY
+						endif
+					else <-fCurrentTargetVectorY 0 lt if
+						<-fNextPixelY <-fCurrentTargetY gt if
+							FALSE ->bCurrentTargetPassedY
+						endif
+					endif endif
+
+					#If the target has been passed during this movement pass.
+					<-bCurrentTargetPassedX <-bCurrentTargetPassedY and if
+						#Handle a special case where the unit moves through its target position to reach a position further on first.
+						#Without this, the unit could land in the wrong position.
+						#This shouldn't happen if the path list is correctly processed.
+						#If this does trigger, we clear whatever reminder of the path list there is, and make sure the unit is snapped to the target.
+						<-fPixelX <-fPixelY PixelToCell asint swap asint swap ->iCellY ->iCellX
+
+						<-iCellX <-iTargetX eq <-iCellY <-iTargetY eq and if
+							CreateList ->lTargetPath
+							<-iTargetX <-iTargetY CellToPixel ->fPixelY ->fPixelX
+						else
+							#Remove the current path waypoint so that we start making our way to the next one.
+							<-lTargetPath 0 RemoveListElement
+							<-lTargetPath 0 RemoveListElement
+						endif
+					endif
+				else
+					4 ->iTargetDeterminantState
+					break #I have to drop some movement frames here, if any. I mean, what else can I do?
+				endif
+			loop
+
+			0 ->iAdditionalMovementLoops
+
+		else <-iTargetDeterminantState 4 eq if
+
+		endif endif
+	endif
+
+	#Automatic unit control vs manual unit control.
+	<-iTargetDeterminantState 4 eq if
+		<-iUID CONST_PIXELCOORDX GetUnitAttribute ->fPixelX
+		<-iUID CONST_PIXELCOORDY GetUnitAttribute ->fPixelY
+	else
+		<-iUID CONST_PIXELCOORDX <-fPixelX SetUnitAttribute
+		<-iUID CONST_PIXELCOORDY <-fPixelY SetUnitAttribute
+	endif
+
+	<-fLastPixelXTemp ->fLastPixelX
+	<-fLastPixelYTemp ->fLastPixelY
+
+	<-lAllPlayerUnits <-iI 1 add <-fPixelX SetListElement
+	<-lAllPlayerUnits <-iI 2 add <-fPixelY SetListElement
+	<-lAllPlayerUnits <-iI 3 add <-fLastPixelX SetListElement
+	<-lAllPlayerUnits <-iI 4 add <-fLastPixelY SetListElement
+	<-lAllPlayerUnits <-iI 5 add <-iTargetDeterminantState SetListElement
+	<-lAllPlayerUnits <-iI 6 add <-fPixelX1 SetListElement
+	<-lAllPlayerUnits <-iI 7 add <-fPixelY1 SetListElement
+	<-lAllPlayerUnits <-iI 8 add <-fTargetAngle1 SetListElement
+	<-lAllPlayerUnits <-iI 9 add <-fPixelX2 SetListElement
+	<-lAllPlayerUnits <-iI 10 add <-fPixelY2 SetListElement
+	<-lAllPlayerUnits <-iI 11 add <-fTargetAngle2 SetListElement
+	<-lAllPlayerUnits <-iI 12 add <-iTargetX SetListElement
+	<-lAllPlayerUnits <-iI 13 add <-iTargetY SetListElement
+	<-lAllPlayerUnits <-iI 14 add <-lTargetPath SetListElement
+	<-lAllPlayerUnits <-iI 15 add <-bShouldRepath SetListElement
+	<-lAllPlayerUnits <-iI 16 add <-iAdditionalMovementLoops SetListElement
+	<-lAllPlayerUnits <-iI 17 add <-fSpeed SetListElement
+
+	<-iI <-iAllPlayerUnitsVariableCount add ->iI
+endwhile
+
+#If the mouse button was pressed down, it's possible a new movement action for a unit was dispatched.
+#Iterate over all units and set their iTargetDeterminantState to 0 to force a repath.
+<-bMouseButtonDown if
+	<-lAllPlayerUnits GetListCount <-iAllPlayerUnitsVariableCount div 0 do
+		I <-iAllPlayerUnitsVariableCount mul 15 add ->iI
+		<-lAllPlayerUnits <-iI TRUE SetListElement
+	loop
+endif
+
+<-bMouseButtonDown <-bMouseButtonUp or if
+	#Create temporary list of all player UIDs - units that can be placed by the player.
+	#{ [iUID] }
+	CreateList ->lAllPlayerUnitsTemporary
+
+	#Fill the temporary list with all eligible UIDs.
+	0 0 9999 TRUE GetAllUnitsInRange 0 do
+		->iUID
+		<-iUID GetUnitType ->sUnitType
+
+		<-sUnitType "TERP" eq 
+		<-sUnitType "SHIELD" eq or
+		<-sUnitType "PULSECANNON" eq or
+		<-sUnitType "MORTAR" eq or
+		<-sUnitType "SPRAYER" eq or
+		<-sUnitType "BEAM" eq or
+		<-sUnitType "SNIPER" eq or
+		if
+			<-lAllPlayerUnitsTemporary <-iUID AppendToList
+		endif
+	loop
+
+	#Get all the operational command nodes from the manager and add them in as well.
+	Self "MapCommandNodeManager.crpl" "lCommandNodesOperational" GetScriptVar ->lCommandNodesOperational
+	Self "MapCommandNodeManager.crpl" "iCommandNodesOperationalVariableCount" GetScriptVar ->iCommandNodesOperationalVariableCount
+	0 ->iI
+	while <-iI <-lCommandNodesOperational GetListCount lt repeat
+		<-lCommandNodesOperational <-iI GetListElement ->iUID
+
+		<-lAllPlayerUnitsTemporary <-iUID AppendToList
+
+		<-iI <-iCommandNodesOperationalVariableCount add ->iI
+	endwhile
+
+	#Iterate over all the found temporary UIDs.
+	#If one of them doesn't exist in lAllPlayerUnits, we add it.
+	#Otherwise, we ignore it.
+	0 ->iI
+	while <-iI <-lAllPlayerUnitsTemporary lt repeat
+		<-lAllPlayerUnitsTemporary <-iI GetListElement ->iUID
+
+		0 ->iJ
+		FALSE ->bAlreadyExistsInList
+		while <-iJ <-lAllPlayerUnits GetListCount lt repeat
+			<-lAllPlayerUnits <-iJ GetListElement <-iUID eq if
+				TRUE ->bAlreadyExistsInList
+				break
+			endif
+
+			<-iJ <-iAllPlayerUnitsVariableCount add ->iJ
+		endwhile
+
+		<-bAlreadyExistsInList not if
+			<-lAllPlayerUnits <-iUID AppendToList
+			<-lAllPlayerUnits <-iUID CONST_PIXELCOORDX GetUnitAttribute AppendToList
+			<-lAllPlayerUnits <-iUID CONST_PIXELCOORDY GetUnitAttribute AppendToList
+			<-lAllPlayerUnits <-iUID CONST_PIXELCOORDX GetUnitAttribute AppendToList
+			<-lAllPlayerUnits <-iUID CONST_PIXELCOORDY GetUnitAttribute AppendToList
+			<-lAllPlayerUnits -1 AppendToList
+			<-lAllPlayerUnits -1.0 AppendToList
+			<-lAllPlayerUnits -1.0 AppendToList
+			<-lAllPlayerUnits -1.0 AppendToList
+			<-lAllPlayerUnits -1.0 AppendToList
+			<-lAllPlayerUnits -1.0 AppendToList
+			<-lAllPlayerUnits -1.0 AppendToList
+			<-lAllPlayerUnits -1 AppendToList
+			<-lAllPlayerUnits -1 AppendToList
+			<-lAllPlayerUnits CreateList AppendToList
+			<-lAllPlayerUnits TRUE AppendToList
+			<-lAllPlayerUnits 0 AppendToList
+			<-lAllPlayerUnits 0.0 AppendToList
+		endif
+
+		<-iI 1 add ->iI
+	endwhile
+endif
+
+FALSE ->bMouseButtonDown
+FALSE ->bMouseButtonUp
+
+:awake
+	TRUE OperateWhilePaused
+	TRUE ->IDENTIFIER_MAPMOVEMENTOVERRIDE
+:IsPositionObstructed
+	->IPB_iY
+	->IPB_iX
+
+	<-IPB_iX <-IPB_iY @SnapCoordsToGrid ->IPB_iY ->IPB_iX
+
+	<-IPB_iX <-IPB_iY GetWall
+	<-IPB_iX <-IPB_iY GetVoid or if
+		TRUE return
+	endif
+
+	FALSE return
+:SortList
+	->SL_l
+
+	<-SL_l GetListCount ->SL_iN
+
+	<-SL_iN 1 sub 0 do
+		<-SL_iN I sub 1 sub 0 do
+			<-SL_l I GetListElement <-SL_l I 1 add GetListElement gt if
+				<-SL_l I GetListElement ->SL_leTemp
+				<-SL_l I <-SL_l I 1 add GetListElement SetListElement
+				<-SL_l I 1 add <-SL_leTemp SetListElement
+			endif
+		loop
+	loop
+
+	<-SL_l return
+:SnapCoordsToGrid
+	->SCT_iCellY
+	->SCT_iCellX
+
+	<-SCT_iCellX asint ->SCT_iCellX
+	<-SCT_iCellY asint ->SCT_iCellY
+
+	<-SCT_iCellX 3 div asint 3 mul 1 add
+	<-SCT_iCellY 3 div asint 3 mul 1 add
+	return
+:LineIntersection # f f f f f f - i i
+    ->li_a2 ->li_y2 ->li_x2 ->li_a1 ->li_y1 ->li_x1
+
+    <-li_a1 cos ->li_m1
+    <-li_a2 cos neg ->li_m2
+    <-li_x2 <-li_x1 sub ->li_m3
+    <-li_a1 sin ->li_m4
+    <-li_a2 sin neg ->li_m5
+    <-li_y2 <-li_y1 sub ->li_m6
+    
+    <-li_m3 <-li_m2 <-li_m6 <-li_m5 @Determinant div ( <-li_m1 <-li_m2 <-li_m4 <-li_m5 @Determinant ) ->li_t
+    
+    <-li_x1 <-li_a1 cos <-li_t mul add ->li_targetX
+    <-li_y1 <-li_a1 sin <-li_t mul add ->li_targetY
+    
+    <-li_targetX <-li_targetY PixelToCell asint swap asint swap
+:Determinant # f f f f - f
+    ->v4 ->v3 ->v2 ->v1
+    <-v1 <-v4 mul sub ( <-v2 <-v3 mul )
+:GetProcessedPath
+	asint ->GPP_iTargetY
+	asint ->GPP_iTargetX
+	asint ->GPP_iOriginY
+	asint ->GPP_iOriginX
+	->GPP_lTargetPath
+
+	#Now that we know where the unit is going, we can run a pathfind to figure out the path our unit should take.
+	<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 2 sub GetListElement <-GPP_iTargetX eq
+	<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 1 sub GetListElement <-GPP_iTargetY eq and if
+		<-GPP_lTargetPath 0 GetListElement <-GPP_lTargetPath 1 GetListElement <-GPP_iTargetX <-GPP_iTargetY 1 1 FALSE TRUE PathFindTerrain ->GPP_lTargetPathRaw
+		FALSE ->GPP_bProcessBeginning
+	else
+		<-GPP_iOriginX <-GPP_iOriginY <-GPP_iTargetX <-GPP_iTargetY 1 1 FALSE TRUE PathFindTerrain ->GPP_lTargetPathRaw
+		TRUE ->GPP_bProcessBeginning
+	endif
+
+	CreateList ->GPP_lTargetPath
+
+	<-GPP_lTargetPathRaw GetListCount eq0 if
+		<-GPP_lTargetPath return
+	endif
+
+	#Convert raw coordinates y*MapWidth+x to a [X, Y, X, Y] coordinate set.
+	#Then, snap the coordinates to grid.
+	#If it's not a duplicate entry (as snapping will cause those), don't include it in the main list.
+	#We end up with a list of coordinates to move to snapped to the 3x3 grid.
+	-1 ->GPP_iLastX
+	-1 ->GPP_iLastY
+	<-GPP_lTargetPathRaw GetListCount 0 do
+		<-GPP_lTargetPathRaw I GetListElement ->GPP_iCoordinateRaw
+		<-GPP_lTargetPath <-GPP_iCoordinateRaw MapWidth mod ->GPP_iX
+		<-GPP_lTargetPath <-GPP_iCoordinateRaw MapWidth div ->GPP_iY
+
+		<-GPP_iX <-GPP_iY @SnapCoordsToGrid ->GPP_iY ->GPP_iX
+
+		<-GPP_iX <-GPP_iLastX neq <-GPP_iY <-GPP_iLastY neq or if
+			<-GPP_lTargetPath <-GPP_iX AppendToList
+			<-GPP_lTargetPath <-GPP_iY AppendToList
+
+			<-GPP_iX ->GPP_iLastX
+			<-GPP_iY ->GPP_iLastY
+		endif
+	loop
+
+	#Using forbidden magic, change the path so that diagonal movements cannot go through walls on the sides of the diagonal.
+	
+	#First, run a routine that, on each diagonal movement, will detect if there's collision with walls on the sides.
+	#A diagonal movement has two sides that a unit will clip.
+	#If a collision is detected with one of the sides, change the current path coordinate to the position of the other side.
+	#This is to emulate the unit taking the shortest diagonal path around stairs of tiles.
+	0 ->GPP_iJ
+	while TRUE repeat
+		<-GPP_iJ 4 sub <-GPP_lTargetPath GetListCount gt if
+			break
+		endif
+
+		<-GPP_lTargetPath <-GPP_iJ       GetListElement ->GPP_iPathX1
+		<-GPP_lTargetPath <-GPP_iJ 1 add GetListElement ->GPP_iPathY1
+		<-GPP_lTargetPath <-GPP_iJ 2 add GetListElement ->GPP_iPathX2
+		<-GPP_lTargetPath <-GPP_iJ 3 add GetListElement ->GPP_iPathY2
+
+		#Process only if this movement is diagonal.
+		<-GPP_iPathX2 <-GPP_iPathX1 sub abs 3 eq
+		<-GPP_iPathY2 <-GPP_iPathY1 sub abs 3 eq and if
+			#Check the two tiles that will be in the way of the unit's adjacent movement.
+			#If one of them is an obstacle, change the current path coordinates to the position of the other tile.
+			<-GPP_iPathX1 <-GPP_iPathY2 @IsPositionObstructed if
+				<-GPP_lTargetPath <-GPP_iJ 2 add <-GPP_iPathX2 InsertListElement
+				<-GPP_lTargetPath <-GPP_iJ 3 add <-GPP_iPathY1 InsertListElement
+				<-GPP_iJ 2 add ->GPP_iJ
+			else <-GPP_iPathX2 <-GPP_iPathY1 @IsPositionObstructed if
+				<-GPP_lTargetPath <-GPP_iJ 2 add <-GPP_iPathX1 InsertListElement
+				<-GPP_lTargetPath <-GPP_iJ 3 add <-GPP_iPathY2 InsertListElement
+				<-GPP_iJ 2 add ->GPP_iJ
+			endif endif
+		endif
+
+		<-GPP_iJ 2 add ->GPP_iJ
+	endwhile
+
+	#Secondly, because of the routine above, if the unit finds itself in a diagonal wall tunnel, it will clip the wall on the other side.
+	#To prevent that, we can run the exact same routine again, but now if a diagonal movement is blocked, we will insert 
+	#a new coordinate set to change the diagonal path to a four directional one, to directly avoid collision.
+	0 ->GPP_iJ
+	while TRUE repeat
+		<-GPP_iJ 4 sub <-GPP_lTargetPath GetListCount gt if
+			break
+		endif
+
+		<-GPP_lTargetPath <-GPP_iJ       GetListElement ->GPP_iPathX1
+		<-GPP_lTargetPath <-GPP_iJ 1 add GetListElement ->GPP_iPathY1
+		<-GPP_lTargetPath <-GPP_iJ 2 add GetListElement ->GPP_iPathX2
+		<-GPP_lTargetPath <-GPP_iJ 3 add GetListElement ->GPP_iPathY2
+
+		#Process only if this movement is diagonal.
+		<-GPP_iPathX2 <-GPP_iPathX1 sub abs 3 eq
+		<-GPP_iPathY2 <-GPP_iPathY1 sub abs 3 eq and if
+			#Check the two tiles that will be in the way of the unit's adjacent movement.
+			#If one of them is an obstacle, we have to add a path between the adjacent movement to go through the other one.
+			#An adjacent path blocked from both sides is not handled, as it should not be allowed by the pathfinder.
+			<-GPP_iPathX1 <-GPP_iPathY2 @IsPositionObstructed if
+				<-GPP_lTargetPath <-GPP_iJ 2 add <-GPP_iPathX2 InsertListElement
+				<-GPP_lTargetPath <-GPP_iJ 3 add <-GPP_iPathY1 InsertListElement
+			else <-GPP_iPathX2 <-GPP_iPathY1 @IsPositionObstructed if
+				<-GPP_lTargetPath <-GPP_iJ 2 add <-GPP_iPathX1 InsertListElement
+				<-GPP_lTargetPath <-GPP_iJ 3 add <-GPP_iPathY2 InsertListElement
+			endif endif
+		endif
+
+		<-GPP_iJ 2 add ->GPP_iJ
+	endwhile
+
+	<-GPP_bProcessBeginning if
+		#Snap the current unit position to grid. Remove all potential instances of this coordinate from the start of the path list.
+		<-GPP_iOriginX <-GPP_iOriginY @SnapCoordsToGrid ->GPP_iOriginSnappedY ->GPP_iOriginSnappedX
+		while TRUE repeat
+			<-GPP_lTargetPath GetListCount 2 lt if
+				break
+			endif
+
+			<-GPP_lTargetPath 0 GetListElement <-GPP_iOriginSnappedX eq
+			<-GPP_lTargetPath 1 GetListElement <-GPP_iOriginSnappedY eq and if
+				<-GPP_lTargetPath 0 RemoveListElement
+				<-GPP_lTargetPath 0 RemoveListElement
+			else
+				break
+			endif
+		endwhile
+	endif
+
+	#Snap the target position to grid. Remove all potential instances of this coordinate set from the end of the path list.
+	<-GPP_iTargetX <-GPP_iTargetY @SnapCoordsToGrid ->GPP_iTargetSnappedY ->GPP_iTargetSnappedX
+	while TRUE repeat
+		<-GPP_lTargetPath GetListCount 2 lt if
+			break
+		endif
+
+		<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 2 sub GetListElement <-GPP_iTargetSnappedX eq
+		<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 1 sub GetListElement <-GPP_iTargetSnappedY eq and if
+			<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 1 sub RemoveListElement
+			<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 1 sub RemoveListElement
+		else
+			break
+		endif
+	endwhile
+
+	#Add the target position to the end of the path list.
+	<-GPP_lTargetPath <-GPP_iTargetX AppendToList
+	<-GPP_lTargetPath <-GPP_iTargetY AppendToList
+
+	<-GPP_lTargetPath return

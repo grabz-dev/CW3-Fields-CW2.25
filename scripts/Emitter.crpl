@@ -1,0 +1,111 @@
+# Emitter.crpl
+# Created on: 7/30/2018 12:28:49 PM
+# ------------------------------------------
+$fPower:64.0
+$iInterval:120
+$iDelay:0
+$bFlip:0
+
+once
+	#When the emitter is flipped, this one is destroyed and a new one is created.
+	#The the new one has this variable set to TRUE so it doesn't show a timer again.
+	-?bActivatedOnce not if
+		FALSE ->bActivatedOnce
+	endif
+
+	Self CONST_TAKEMAPSPACE 		TRUE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS 	TRUE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES 	TRUE SetUnitAttribute
+	Self CONST_CONNECTABLE 			FALSE SetUnitAttribute
+
+	<-fPower 0.0 gt if
+		Self CONST_COUNTSFORVICTORY 	TRUE SetUnitAttribute
+	else
+		Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+	endif
+
+	<-bFlip if
+		Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+		Self CONST_DESTROYMODE 			0 SetUnitAttribute
+	endif
+
+	<-iDelay SetTimer0
+
+	@awake
+endonce
+
+GetTimer0 eq0 if
+	<-bActivatedOnce not if
+		"" SetText
+		TRUE ->bActivatedOnce
+	endif
+
+	<-iInterval SetTimer0
+
+	CurrentCoords <-fPower AddCreeper
+endif
+
+<-bActivatedOnce not if
+	GetTimer0 30.0 div ceil asint ->iSeconds
+
+	<-iSeconds 60 gt if
+		<-iSeconds 60 div ->iMinutes
+
+		<-iMinutes "m " concat <-iSeconds <-iMinutes 60 mul sub concat "s" concat SetText
+	else
+		<-iSeconds "s" concat SetText
+	endif
+endif
+
+:awake
+	FALSE OperateWhilePaused
+	TRUE ->IDENTIFIER_EMITTER
+
+	<-fPower 0.0 gt if
+		Self "main" "Custom20" SetImage
+	else
+		Self "main" "Custom21" SetImage
+	endif
+
+	<-bFlip if
+		Self "flip" "Custom36" SetImage
+		Self "flip" -0.01 SetImagePositionZ
+		Self "flip" 0.3 0.3 SetImageScale
+	else
+		Self "flip" "NONE" SetImage
+	endif
+
+	@SetStandardText
+
+	0.3 SetTextSize
+	"LowerCenter" SetTextAnchor
+	5 SetTextY
+:destroyed
+	<-bFlip if
+		"Misc27" PlaySound
+
+		"CRPLCORE" CurrentCoords CreateUnit ->unit
+		<-unit "Emitter.crpl" AddScriptToUnit
+		<-unit "Emitter.crpl" "fPower" <-fPower neg SetScriptVar
+		<-unit "Emitter.crpl" "iInterval" <-iInterval SetScriptVar
+		<-unit "Emitter.crpl" "iDelay" GetTimer0 SetScriptVar
+		<-unit "Emitter.crpl" "bFlip" <-bFlip SetScriptVar
+
+		<-unit "Emitter.crpl" "bActivatedOnce" <-bActivatedOnce SetScriptVar
+
+		<-fPower neg 0 gt if
+			"GRAY" "ANTIEMITTER" "Emitter" "Flipped!" CurrentPixelCoords ShowGameEventTag
+		else
+			"CYAN" "EMITTER" "Emitter" "Flipped!" CurrentPixelCoords ShowGameEventTag
+		endif
+	else
+		"CYAN" "EMITTER" "Emitter" "Destroyed!" CurrentPixelCoords ShowGameEventTag
+	endif
+:SetStandardText
+	<-iInterval 30.0 div ->intervalStr
+	<-intervalStr StringLength 4 gt if
+		<-intervalStr 0 4 Substring ->intervalStr
+	endif
+
+	"Amt: " <-fPower concat "
+	Interval: " concat <-intervalStr concat SetPopupText

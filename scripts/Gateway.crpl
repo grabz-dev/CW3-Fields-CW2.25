@@ -1,0 +1,114 @@
+# Gateway.crpl
+# Created on: 8/12/2018 5:08:20 AM
+# ------------------------------------------
+$iCommandNodeUID:-1
+$iDronesMax:10
+$iDroneSpawnInterval:60
+
+$fDroneSpeed:3.0
+$iDroneHealth:22
+
+once
+	@awake
+
+	0 ->iDronesCurrent
+
+	<-iDroneSpawnInterval SetTimer0
+
+	#recompile compatibility
+	TRUE ->bForcePathUpdate
+endonce
+
+<-iDronesCurrent <-iDronesMax lt if
+	GetTimer0 eq0 if
+		<-iDroneSpawnInterval SetTimer0
+
+		"CRPLCORE" CurrentCoords CreateUnit ->iUID
+		<-iUID CONST_MAXHEALTH <-iDroneHealth SetUnitAttribute
+		<-iUID CONST_HEALTH <-iDroneHealth SetUnitAttribute
+		<-iUID "main" "Custom28" SetImage
+		<-iUID "shadow" "Custom28" SetImage
+		<-iUID "health" "Custom27" SetImage
+
+		<-iUID "CustomDroneBase.crpl" AddScriptToUnit
+		<-iUID "CustomDroneBase.crpl" "iGatewayUID" Self SetScriptVar
+
+		<-iUID "CustomDroneBase.crpl" "iCommandNodeUID" <-iCommandNodeUID SetScriptVar
+
+		<-iUID "CustomDroneBase.crpl" "fSpeed" <-fDroneSpeed SetScriptVar
+
+		<-iDronesCurrent 1 add ->iDronesCurrent
+		@SetStandardText
+	endif
+endif
+
+#bForcePathUpdate is set from either:
+#Tile.crpl, in :destroyed.
+#MapGatewayManager.crpl, when a change in landed Command Nodes is detected.
+<-bForcePathUpdate if
+	FALSE ->bForcePathUpdate
+
+	"IDENTIFIER_MAPCOMMANDNODEMANAGER" TRUE GetCoresWithVar 0 do
+		->iMapUID
+	loop
+
+	<-iMapUID "MapCommandNodeManager.crpl" "lCommandNodesOperational" GetScriptVar ->lCommandNodesOperational
+	<-iMapUID "MapCommandNodeManager.crpl" "iCommandNodesOperationalVariableCount" GetScriptVar ->iCommandNodesOperationalVariableCount
+
+	-1 ->iShortestPathUID
+	0 ->lShortestPath
+
+	0 ->iI
+	while <-iI <-lCommandNodesOperational GetListCount lt repeat
+		<-lCommandNodesOperational <-iI GetListElement ->iUID
+
+		CurrentCoords <-iUID CONST_COORDX GetUnitAttribute <-iUID CONST_COORDY GetUnitAttribute 1 1 FALSE TRUE PathFindTerrain ->lPathRaw
+
+		#If there is a path
+		<-lPathRaw GetListCount 0 gt if
+			<-iShortestPathUID -1 eq
+			<-lPathRaw GetListCount <-lShortestPath GetListCount lt or if
+				<-iUID ->iShortestPathUID
+				<-lPathRaw ->lShortestPath
+			endif
+		endif
+
+		<-iI <-iCommandNodesOperationalVariableCount add ->iI
+	endwhile
+
+	<-iShortestPathUID ->iCommandNodeUID
+
+	"IDENTIFIER_CUSTOMDRONEBASE" TRUE GetCoresWithVar 0 do
+		->GCWV_iUID
+
+		<-GCWV_iUID "CustomDroneBase.crpl" "iCommandNodeUID" GetScriptVar ->GCWV_iCommandNodeUID
+		0 ->GCWV_iI
+		FALSE ->GCWV_iMatchFound
+		while <-GCWV_iI <-lCommandNodesOperational GetListCount lt repeat
+			<-lCommandNodesOperational <-GCWV_iI GetListElement <-GCWV_iCommandNodeUID eq if
+				TRUE ->GCWV_iMatchFound
+				break
+			endif
+
+			<-GCWV_iI <-iCommandNodesOperationalVariableCount add ->GCWV_iI
+		endwhile
+
+		<-GCWV_iMatchFound not if
+			<-GCWV_iUID "CustomDroneBase.crpl" "iCommandNodeUID" <-iCommandNodeUID SetScriptVar
+		endif
+	loop
+endif
+
+:awake
+	FALSE OperateWhilePaused
+	TRUE ->IDENTIFIER_GATEWAY
+
+	Self "main" "Custom24" SetImage
+
+	@SetStandardText
+:destroyed
+	"CYAN" "SPORETOWER" "Gateway" "Destroyed!" CurrentPixelCoords ShowGameEventTag
+:SetStandardText
+	"Drones: " <-iDronesCurrent concat "/" concat <-iDronesMax concat " [1 / " concat <-iDroneSpawnInterval 30.0 div 100.0 mul ceil 100.0 div concat "s]
+[HP: " concat <-iDroneHealth 20.0 div 100.0 mul ceil 100.0 div concat "] [SPD: " concat <-fDroneSpeed 8.0 div 3.0 div 30.0 mul 100.0 mul ceil 100.0 div concat "/s]" concat
+	SetPopupText

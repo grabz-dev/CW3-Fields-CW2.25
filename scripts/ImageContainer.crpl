@@ -1,0 +1,21 @@
+# ImageContainer.crpl
+# Created on: 8/10/2018 4:12:49 AM
+# ------------------------------------------
+once
+	@awake
+endonce
+
+<-bExists not if
+	Self 0 Destroy
+endif
+
+:awake
+	TRUE OperateWhilePaused
+	TRUE ->IDENTIFIER_IMAGECONTAINER
+
+	Self CONST_TAKEMAPSPACE         FALSE SetUnitAttribute
+    Self CONST_CREATEPZ             FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS    FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY     FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES     FALSE SetUnitAttribute
+    Self CONST_DESTROYMODE 			0 SetUnitAttribute

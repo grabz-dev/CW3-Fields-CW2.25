@@ -1,0 +1,36 @@
+# MapGatewayManager.crpl
+# Created on: 8/12/2018 9:10:46 AM
+# ------------------------------------------
+once
+	@awake
+endonce
+
+FALSE ->bDispatchCommandNodeEvent
+
+Self "MapCommandNodeManager.crpl" "lNewlyOperationalCommandNodes" GetScriptVar ->lNewlyOperationalCommandNodes
+
+<-lNewlyOperationalCommandNodes GetListCount 0 gt if
+	TRUE ->bDispatchCommandNodeEvent
+endif
+
+Self "MapCommandNodeManager.crpl" "lNewlyAscendingCommandNodes" GetScriptVar ->lNewlyAscendingCommandNodes
+
+<-lNewlyAscendingCommandNodes GetListCount 0 gt if
+	TRUE ->bDispatchCommandNodeEvent
+endif
+
+Self "MapCommandNodeManager.crpl" "lNewlyMovedCommandNodes" GetScriptVar ->lNewlyMovedCommandNodes
+
+<-lNewlyMovedCommandNodes GetListCount 0 gt if
+	TRUE ->bDispatchCommandNodeEvent
+endif
+
+<-bDispatchCommandNodeEvent if
+	"IDENTIFIER_GATEWAY" TRUE GetCoresWithVar 0 do
+		"Gateway.crpl" "bForcePathUpdate" TRUE SetScriptVar
+	loop
+endif
+
+:awake
+	FALSE OperateWhilePaused
+	TRUE ->IDENTIFIER_MAPGATEWAYMANAGER

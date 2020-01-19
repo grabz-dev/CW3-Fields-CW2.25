@@ -1,0 +1,39 @@
+# MapRotatingWind.crpl
+# Created on: 1/7/2020 11:48:06 AM
+# ------------------------------------------
+$fStartingRotation:0.0
+$fSecondsPerRotation:0.0
+
+once
+    <-fStartingRotation ->fRotation
+    2.0 PI mul <-fSecondsPerRotation 30.0 mul div ->fRotationSpeed
+	@awake
+
+	Self "Map.crpl" "iWindRL" GetScriptVar ->iWindRL
+	Self "Map.crpl" "iWindUD" GetScriptVar ->iWindUD
+
+	<-iWindRL abs <-iWindUD abs add ->fTotalWind
+endonce
+
+<-fSecondsPerRotation 0 neq if
+	<-fRotation <-fRotationSpeed add ->fRotation
+    <-fRotation 2.0 PI mul gte if
+        <-fRotation 2.0 PI mul sub ->fRotation
+    endif
+    <-fRotation -2.0 PI mul lte if
+        <-fRotation 2.0 PI mul add ->fRotation
+    endif
+
+	<-fRotation cos ->iWindRL
+	<-fRotation sin ->iWindUD
+
+    <-iWindRL abs <-iWindUD abs add ->iTotal
+
+	<-iWindRL <-iTotal div <-fTotalWind mul ->iWindRL
+	<-iWindUD <-iTotal div <-fTotalWind mul ->iWindUD
+
+	Self "Map.crpl" "iWindRL" <-iWindRL SetScriptVar
+	Self "Map.crpl" "iWindUD" <-iWindUD SetScriptVar
+endif
+
+:awake

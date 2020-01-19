@@ -1,0 +1,331 @@
+# UIEditorFieldMenu.crpl
+# Created on: 9/19/2019 8:56:04 AM
+# ------------------------------------------
+once
+    1 Delay
+
+    @awake
+
+    "IDENTIFIER_STANDALONEFIELDMANAGER" TRUE GetCoresWithVar 0 do
+        ->G_iFieldManagerUID
+    loop
+
+    #Build list of allowed field angles - 8 directions.
+    CreateList ->G_lValidFieldAngles
+    PI 4.0 div ->fQuadrant
+    ClearStack 
+        0.0 <-fQuadrant <-fQuadrant 2.0 mul <-fQuadrant 3.0 mul <-fQuadrant 4.0 mul <-fQuadrant 5.0 mul <-fQuadrant 6.0 mul <-fQuadrant 7.0 mul
+    <-G_lValidFieldAngles AppendStackToList
+endonce
+
+#If we are not in edit mode, process nothing.
+IsEditMode not if
+    return
+endif
+
+0 GetMouseButton if
+    #If we just clicked, reset all drag values so that new data can be collected on drag angle without interference from previous drag action.
+    0 GetMouseButtonDown if
+        0.0 ->G_fMDragTotalX
+        0.0 ->G_fMDragTotalY
+        0.0 ->G_fMDragTotal
+        0.0 ->G_fMDragAngle
+        GetMousePosition ->G_fMDragLastY ->G_fMDragLastX
+        FALSE ->G_bMDragValid
+    endif
+
+    #Calculate our current dragging movement angle for use with the mouse based field rotation setting.
+    GetMousePosition ->fY ->fX
+    <-fY <-G_fMDragLastY sub 2 pow <-fX <-G_fMDragLastX sub 2 pow add sqrt <-G_fMDragTotal add ->G_fMDragTotal
+    <-fY <-G_fMDragLastY sub <-G_fMDragTotalY add ->G_fMDragTotalY
+    <-fX <-G_fMDragLastX sub <-G_fMDragTotalX add ->G_fMDragTotalX
+    <-fX <-fY ->G_fMDragLastY ->G_fMDragLastX
+
+    <-G_fMDragTotal 8.0 gt if
+        <-G_fMDragTotalY <-G_fMDragTotalX atan2 PI 2.0 div add ->G_fMDragAngle
+        0.0 ->G_fMDragTotalX
+        0.0 ->G_fMDragTotalY
+        0.0 ->G_fMDragTotal
+        TRUE ->G_bMDragValid
+    endif
+
+    GetMouseScreenPixelPosition ->G_fMouseY ->G_fMouseX
+    #Make it so 0,0 is at top left of the UI image, Y down.
+    <-G_fMouseY <-G_iLayoutYCenter 128 add sub neg ->G_fMouseY
+
+    #If we've clicked within the editor menu (128x256), intercept the click.
+    <-G_fMouseX <-G_fMouseY 0 0 128 256 0 @AreCoordsWithinBox if
+        <-G_fMouseX <-G_fMouseY 3 3 120 24 0 @AreCoordsWithinBox if "NO" endif
+        <-G_fMouseX <-G_fMouseY 3 26 120 47 0 @AreCoordsWithinBox if "PAINT" endif
+        <-G_fMouseX <-G_fMouseY 3 49 120 70 0 @AreCoordsWithinBox if "ERASE" endif
+            ->G_sEditorPaintMode
+
+        <-G_fMouseX <-G_fMouseY 62 112 73 123   2 @AreCoordsWithinBox if <-G_lValidFieldAngles 5 GetListElement  "RIGHT" endif
+        <-G_fMouseX <-G_fMouseY 62 138 73 149   2 @AreCoordsWithinBox if <-G_lValidFieldAngles 6 GetListElement  "BOTTOM_RIGHT" endif
+        <-G_fMouseX <-G_fMouseY 36 138 47 149   2 @AreCoordsWithinBox if <-G_lValidFieldAngles 7 GetListElement  "BOTTOM" endif
+        <-G_fMouseX <-G_fMouseY 10 138 21 149   2 @AreCoordsWithinBox if <-G_lValidFieldAngles 0 GetListElement  "BOTTOM_LEFT" endif
+        <-G_fMouseX <-G_fMouseY 10 112 21 123   2 @AreCoordsWithinBox if <-G_lValidFieldAngles 1 GetListElement  "LEFT" endif
+        <-G_fMouseX <-G_fMouseY 10 86 21 97     2 @AreCoordsWithinBox if <-G_lValidFieldAngles 2 GetListElement  "TOP_LEFT" endif
+        <-G_fMouseX <-G_fMouseY 36 86 47 97     2 @AreCoordsWithinBox if <-G_lValidFieldAngles 3 GetListElement  "TOP" endif
+        <-G_fMouseX <-G_fMouseY 62 86 73 97     2 @AreCoordsWithinBox if <-G_lValidFieldAngles 4 GetListElement  "TOP_RIGHT" endif
+        <-G_fMouseX <-G_fMouseY 36 112 47 123   2 @AreCoordsWithinBox if 0.0                  "PIN" endif
+        <-G_fMouseX <-G_fMouseY 103 140 114 151 2 @AreCoordsWithinBox if 0.0                  "FOLLOW_MOUSE" endif
+            ->G_sEditorDirectionButton
+            ->G_fEditorDirectionAngle
+
+        <-G_fMouseX <-G_fMouseY 87 82 98 93    2 @AreCoordsWithinBox if "C" endif
+        <-G_fMouseX <-G_fMouseY 87 98 98 109   2 @AreCoordsWithinBox if "AC" endif
+        <-G_fMouseX <-G_fMouseY 87 114 98 125  2 @AreCoordsWithinBox if "ALL" endif
+            ->G_sEditorCreeperType
+
+        <-G_fMouseX <-G_fMouseY 5 198 16 209   2 @AreCoordsWithinBox if "ROUND" endif
+        <-G_fMouseX <-G_fMouseY 64 198 75 209  2 @AreCoordsWithinBox if "SQUARE" endif
+            ->G_sEditorBrushMode
+
+        <-G_fMouseX <-G_fMouseY 6 176 19 195     2 @AreCoordsWithinBox if 0 endif
+        <-G_fMouseX <-G_fMouseY 56 176 69 195    2 @AreCoordsWithinBox if 1 endif
+        <-G_fMouseX <-G_fMouseY 106 176 119 195  2 @AreCoordsWithinBox if 2 endif
+            ->G_iEditorBrushRadius
+
+        <-G_fMouseX <-G_fMouseY 6 234 19 253     2 @AreCoordsWithinBox if 1 endif
+        <-G_fMouseX <-G_fMouseY 31 234 44 253    2 @AreCoordsWithinBox if 2 endif
+        <-G_fMouseX <-G_fMouseY 56 234 69 253    2 @AreCoordsWithinBox if 3 endif
+        <-G_fMouseX <-G_fMouseY 81 234 94 253    2 @AreCoordsWithinBox if 4 endif
+        <-G_fMouseX <-G_fMouseY 106 234 119 253  2 @AreCoordsWithinBox if 5 endif
+            ->G_iEditorBrushPower
+
+        @RefreshUI
+    #If we have not clicked inside the editor menu, and we are in paint or erase mode, process field creation.
+    else <-G_sEditorPaintMode "NO" neq if
+        <-G_iFieldManagerUID "StandaloneFieldManager.crpl" "G_lEditorEvents" GetScriptVar ->lEditorEvents
+
+        GetMouseCell ->iCellY ->iCellX
+        #Process within radius.
+        <-iCellY <-G_iEditorBrushRadius add 1 add <-iCellY <-G_iEditorBrushRadius sub do
+            <-iCellX <-G_iEditorBrushRadius add 1 add <-iCellX <-G_iEditorBrushRadius sub do
+                #If round brush, we have to check distance.
+                <-G_sEditorBrushMode "ROUND" eq <-iCellX <-iCellY I J Distance <-G_iEditorBrushRadius 0.3 add lt and <-G_sEditorBrushMode "SQUARE" eq or if
+                    #Make sure the field is within map bounds.
+                    I 0 gte J 0 gte and I MapWidth lt and J MapHeight lt and if
+                        #If field direction is based on mouse, use drag to calculate required angle.
+                        <-G_sEditorDirectionButton "FOLLOW_MOUSE" eq if
+                            <-G_bMDragValid not if
+                                return
+                            endif
+                            <-G_fMDragAngle @GetClosestValidFieldAngle ->G_fEditorDirectionAngle
+                        endif
+
+                        #Get direction of the field from angle.
+                        <-G_fEditorDirectionAngle cos ->fDirX
+                        <-G_fEditorDirectionAngle sin ->fDirY
+
+                        #Get power of the field based on the selected setting.
+                        <-G_iFieldManagerUID "StandaloneFieldManager.crpl" "FieldPower" <-G_iEditorBrushPower concat GetScriptVar ->iPower
+                        <-G_sEditorPaintMode "ERASE" eq if
+                            0 ->iPower
+                        endif
+
+                        #If all creeper type, paint both at once, otherwise just the selected one.
+                        <-G_sEditorCreeperType "ALL" eq if
+                            <-lEditorEvents I AppendToList
+                            <-lEditorEvents J AppendToList
+                            <-lEditorEvents <-fDirX <-iPower mul asint AppendToList
+                            <-lEditorEvents <-fDirY <-iPower mul asint AppendToList
+                            <-lEditorEvents "AC" AppendToList
+                            <-lEditorEvents <-G_sEditorDirectionButton "PIN" eq AppendToList
+                            <-lEditorEvents <-G_sEditorPaintMode "ERASE" eq AppendToList
+
+                            <-lEditorEvents I AppendToList
+                            <-lEditorEvents J AppendToList
+                            <-lEditorEvents <-fDirX <-iPower mul asint AppendToList
+                            <-lEditorEvents <-fDirY <-iPower mul asint AppendToList
+                            <-lEditorEvents "C" AppendToList
+                            <-lEditorEvents <-G_sEditorDirectionButton "PIN" eq AppendToList
+                            <-lEditorEvents <-G_sEditorPaintMode "ERASE" eq AppendToList
+                        else
+                            <-lEditorEvents I AppendToList
+                            <-lEditorEvents J AppendToList
+                            <-lEditorEvents <-fDirX <-iPower mul asint AppendToList
+                            <-lEditorEvents <-fDirY <-iPower mul asint AppendToList
+                            <-lEditorEvents <-G_sEditorCreeperType AppendToList
+                            <-lEditorEvents <-G_sEditorDirectionButton "PIN" eq AppendToList
+                            <-lEditorEvents <-G_sEditorPaintMode "ERASE" eq AppendToList
+                        endif
+                    endif
+                endif
+            loop
+        loop
+
+        #Push the events to the manager.
+        <-G_iFieldManagerUID "StandaloneFieldManager.crpl" "G_lEditorEvents" <-lEditorEvents SetScriptVar
+    endif endif
+endif
+
+# -
+# Arguments: 
+# Result:
+:Awake
+    TRUE OperateWhilePaused
+    TRUE ->IDENTIFIER_UIEDITORFIELDMENU
+
+    256 ->G_iLayoutHeight
+    200 ->G_iLayoutYCenter
+    <-G_iLayoutYCenter <-G_iLayoutHeight 0.5 mul asint add ->G_iLayoutYTop
+
+    Self CONST_TAKEMAPSPACE 		FALSE SetUnitAttribute
+    Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS 	FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES 	FALSE SetUnitAttribute
+    Self "main" "Custom27_256pp" SetImage
+    "main" 256 -100 @SetupFullSizeImage
+    
+    TRUE SetScreenMode
+    0 0 SetScreenCoords
+
+    # Set default editor values.
+    "NO" ->G_sEditorPaintMode # "NO", "PAINT", "ERASE"
+    "BOTTOM" ->G_sEditorDirectionButton
+    0.0 ->G_fEditorDirectionAngle
+    "C" ->G_sEditorCreeperType # "C", "AC", "ALL"
+    "ROUND" ->G_sEditorBrushMode # "ROUND", "SQUARE"
+    1 ->G_iEditorBrushRadius # 0,1,2
+    2 ->G_iEditorBrushPower # 1,2,3,4,5
+
+    @RefreshUI
+
+# Provided an angle, returns the nearest match to the list of allowed field angles.
+# f1 - f2
+# Arguments: An angle
+# Result: Valid field angle
+:GetClosestValidFieldAngle
+    ->GCV_fAngleFree
+
+    2.0 PI mul ->GCV_fAngleShortestDistance
+    0.0 ->GCV_fAngleShortestSnap
+    
+    <-G_lValidFieldAngles 0 do
+        <-G_lValidFieldAngles I GetListElement ->GCV_fAngleSnap
+        <-GCV_fAngleSnap <-GCV_fAngleFree ShortestAngle abs ->GCV_fAngleDistance
+
+        <-GCV_fAngleDistance <-GCV_fAngleShortestDistance lt if
+            <-GCV_fAngleDistance ->GCV_fAngleShortestDistance
+            <-GCV_fAngleSnap ->GCV_fAngleShortestSnap
+        endif
+    loop
+
+    <-GCV_fAngleShortestSnap
+
+# Redraw all UI images.
+# -
+# Arguments: 
+# Result:
+:RefreshUI
+    #If we are not in edit mode, show nothing.
+    IsEditMode not if
+        Self RemoveImages
+        Self "main" "NONE" SetImage
+        return
+    endif
+
+    #Prepare images that always exist.
+    Self "editor_direction" "Custom89pp" SetImage
+    "editor_direction" 64 -101 @SetupFullSizeImage
+    Self "editor_creepertype" "Custom89pp" SetImage
+    "editor_creepertype" 64 -101 @SetupFullSizeImage
+    Self "editor_brushmode" "Custom88pp" SetImage
+    "editor_brushmode" 64 -101 @SetupFullSizeImage
+    Self "editor_brushradius" "Custom87pp" SetImage
+    "editor_brushradius" 64 -101 @SetupFullSizeImage
+    Self "editor_brushpower" "Custom87pp" SetImage
+    "editor_brushpower" 64 -101 @SetupFullSizeImage
+
+    #Choose large button image.
+    <-G_sEditorPaintMode "NO" eq if
+        Self "editor_paint" "Custom26_256pp" SetImage
+        "editor_paint" 256 -101 @SetupFullSizeImage
+    else <-G_sEditorPaintMode "PAINT" eq if
+        Self "editor_paint" "Custom25_256pp" SetImage
+        "editor_paint" 256 -101 @SetupFullSizeImage
+    else <-G_sEditorPaintMode "ERASE" eq if
+        Self "editor_paint" "Custom24_256pp" SetImage
+        "editor_paint" 256 -101 @SetupFullSizeImage
+    endif endif endif
+
+    #Set position of the field direction checkbox.
+         <-G_sEditorDirectionButton "RIGHT"        eq if Self "editor_direction" 62 112
+    else <-G_sEditorDirectionButton "BOTTOM_RIGHT" eq if Self "editor_direction" 62 138
+    else <-G_sEditorDirectionButton "BOTTOM"       eq if Self "editor_direction" 36 138
+    else <-G_sEditorDirectionButton "BOTTOM_LEFT"  eq if Self "editor_direction" 10 138
+    else <-G_sEditorDirectionButton "LEFT"         eq if Self "editor_direction" 10 112
+    else <-G_sEditorDirectionButton "TOP_LEFT"     eq if Self "editor_direction" 10 86
+    else <-G_sEditorDirectionButton "TOP"          eq if Self "editor_direction" 36 86
+    else <-G_sEditorDirectionButton "TOP_RIGHT"    eq if Self "editor_direction" 62 86
+    else <-G_sEditorDirectionButton "PIN"          eq if Self "editor_direction" 36 112
+    else <-G_sEditorDirectionButton "FOLLOW_MOUSE" eq if Self "editor_direction" 103 140
+    endif endif endif endif endif endif endif endif endif endif
+    swap 32 add swap neg <-G_iLayoutYTop add 32 sub -101 SetImagePosition
+
+    #Set position of the creeper type checkbox.
+         <-G_sEditorCreeperType "C"   eq if Self "editor_creepertype" 87 82
+    else <-G_sEditorCreeperType "AC"  eq if Self "editor_creepertype" 87 98
+    else <-G_sEditorCreeperType "ALL" eq if Self "editor_creepertype" 87 114
+    endif endif endif
+    swap 32 add swap neg <-G_iLayoutYTop add 32 sub -101 SetImagePosition
+    
+    #Set position of the brush mode checkbox.
+         <-G_sEditorBrushMode "ROUND"  eq if Self "editor_brushmode" 5 198
+    else <-G_sEditorBrushMode "SQUARE" eq if Self "editor_brushmode" 64 198
+    endif endif
+    swap 32 add swap neg <-G_iLayoutYTop add 32 sub -101 SetImagePosition
+
+    #Set position of the brush radius slider handle.
+         <-G_iEditorBrushRadius 0 eq if Self "editor_brushradius" 6 176
+    else <-G_iEditorBrushRadius 1 eq if Self "editor_brushradius" 56 176
+    else <-G_iEditorBrushRadius 2 eq if Self "editor_brushradius" 106 176
+    endif endif endif
+    swap 32 add swap neg <-G_iLayoutYTop add 32 sub -101 SetImagePosition
+
+    #Set position of the brush power slider handle.
+         <-G_iEditorBrushPower 1 eq if Self "editor_brushpower" 6 234
+    else <-G_iEditorBrushPower 2 eq if Self "editor_brushpower" 31 234
+    else <-G_iEditorBrushPower 3 eq if Self "editor_brushpower" 56 234
+    else <-G_iEditorBrushPower 4 eq if Self "editor_brushpower" 81 234
+    else <-G_iEditorBrushPower 5 eq if Self "editor_brushpower" 106 234
+    endif endif endif endif endif
+    swap 32 add swap neg <-G_iLayoutYTop add 32 sub -101 SetImagePosition
+
+# Box collision detection with mouse clicks.
+# f1 f2 x3 y4 x5 y6 f7 - b8
+# Arguments: Click coordinates, box top left, box bottom right, margin of click error around the sides of the box.
+# Result:
+:AreCoordsWithinBox
+    ->ACW_fPad
+    ->ACW_fY2
+    ->ACW_fX2
+    ->ACW_fY1
+    ->ACW_fX1
+    ->ACW_fY
+    ->ACW_fX
+
+    <-ACW_fX <-ACW_fX1 <-ACW_fPad sub gte
+    <-ACW_fX <-ACW_fX2 <-ACW_fPad add lte and
+    <-ACW_fY <-ACW_fY1 <-ACW_fPad sub gte and
+    <-ACW_fY <-ACW_fY2 <-ACW_fPad add lte and if
+        TRUE
+    else
+        FALSE
+    endif
+
+# Apply standard values to images that are meant to span full size of the desired box.
+# s1, i2, i3 -
+# Arguments: Image name, box length, z-index
+# Result:
+:SetupFullSizeImage
+    ->SFS_iZ
+    ->SFS_iSize
+    ->SFS_s
+    Self <-SFS_s <-SFS_iSize 24.0 div dup SetImageScale
+    Self <-SFS_s <-SFS_iSize 2 div SetImagePositionX
+    Self <-SFS_s <-G_iLayoutYCenter SetImagePositionY
+    Self <-SFS_s <-SFS_iZ SetImagePositionZ

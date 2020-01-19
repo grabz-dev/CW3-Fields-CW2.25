@@ -1,0 +1,77 @@
+# UIFieldOnOffToggle.crpl
+# Created on: 1/7/2020 10:17:18 AM
+# ------------------------------------------
+once
+    @awake
+
+    TRUE ->G_bFieldsShowChecked
+
+    "IDENTIFIER_STANDALONEFIELDMANAGER" TRUE GetCoresWithVar 0 do
+        ->iFieldManagerUID
+    loop
+
+    @OnRefresh
+endonce
+
+#You cannot use this button in the editor. We need the images.
+IsEditMode not if
+    0 GetMouseButtonDown if
+        GetMouseScreenPixelPosition ->fMouseY ->fMouseX
+
+        ScreenWidth 2.0 div ->fScreenMiddleX
+        <-fScreenMiddleX 371 sub ->fX1
+        <-fScreenMiddleX 356 sub ->fX2
+        98 ->fY1
+        113 ->fY2
+
+        <-fMouseX <-fX1 gte
+        <-fMouseX <-fX2 lte and
+        <-fMouseY <-fY1 gte and
+        <-fMouseY <-fY2 lte and if
+            <-G_bFieldsShowChecked not ->G_bFieldsShowChecked
+            <-iFieldManagerUID "StandaloneFieldManager.crpl" "G_bFieldsVisible" <-G_bFieldsShowChecked SetScriptVar
+            @OnRefresh
+            10 Delay
+        endif
+    endif
+endif
+
+:awake
+    TRUE OperateWhilePaused
+    TRUE ->IDENTIFIER_UIFIELDONOFFTOGGLE
+
+    Self CONST_TAKEMAPSPACE 		FALSE SetUnitAttribute
+    Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS 	FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES 	FALSE SetUnitAttribute
+
+    TRUE SetScreenMode
+    0.5 0 SetScreenCoords
+
+    @OnRefresh
+:OnRefresh
+    Self "main" "Custom2_128pp" SetImage
+    "main" 128 -90 @SetupFullSizeImage
+
+    <-G_bFieldsShowChecked if
+        Self "checkbox" "Custom89pp" SetImage
+        "checkbox" 64 -91 @SetupFullSizeImage
+        Self "checkbox" 80 SetImagePositionY
+        Self "checkbox" -338 SetImagePositionX
+    else
+        Self "checkbox" "NONE" SetImage
+    endif
+
+# Apply standard values to images that are meant to span full size of the desired box.
+# s1, i2, i3 -
+# Arguments: Image name, box length, z-index
+# Result:
+:SetupFullSizeImage
+    ->SFS_iZ
+    ->SFS_iSize
+    ->SFS_s
+    Self <-SFS_s <-SFS_iSize 24.0 div dup SetImageScale
+    Self <-SFS_s -311 SetImagePositionX
+    Self <-SFS_s 52 SetImagePositionY
+    Self <-SFS_s <-SFS_iZ SetImagePositionZ

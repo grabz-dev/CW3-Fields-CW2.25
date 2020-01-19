@@ -1,0 +1,79 @@
+# UIWindIndicator.crpl
+# Created on: 8/8/2018 10:35:36 AM
+# ------------------------------------------
+once
+	@awake
+endonce
+
+<-A_iMapUID "Map.crpl" "iWindUD" GetScriptVar ->iWindUD
+<-A_iMapUID "Map.crpl" "iWindRL" GetScriptVar ->iWindRL
+
+<-iWindUD <-iLastWindUD neq <-iWindRL <-iLastWindRL neq or if
+	<-iWindUD abs <-iWindRL abs add 100.0 div 0 round 100.0 div " G" concat SetText
+	<-iWindRL <-iWindUD atan2 ->fAngle
+	Self "arrow" <-fAngle SetImageRotation
+endif
+
+<-iWindUD ->iLastWindUD
+<-iWindRL ->iLastWindRL
+
+GetTimer0 eq0 if
+	30 SetTimer0
+
+	@OnResize
+endif
+
+ScreenWidth ->iScreenWidth
+ScreenHeight ->iScreenHeight
+
+<-iScreenWidth <-iLastScreenWidth neq <-iScreenHeight <-iLastScreenHeight neq or if
+	@OnResize
+endif
+
+<-iScreenWidth ->iLastScreenWidth
+<-iScreenHeight ->iLastScreenHeight
+:GameLoaded
+    @OnResize
+:awake
+	TRUE OperateWhilePaused
+	TRUE ->IDENTIFIER_UIVERSIONNUMBER
+
+	Self CONST_TAKEMAPSPACE 		FALSE SetUnitAttribute
+    Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS 	FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES 	FALSE SetUnitAttribute
+
+    TRUE SetScreenMode
+    @OnResize
+    
+    Self "main" "Custom0_256pp" SetImage
+    Self "main" 4 4 SetImageScale
+    Self "main" 0 SetImagePositionX
+    Self "main" 0 SetImagePositionY
+    Self "main" -100 SetImagePositionZ
+
+    Self "arrow" "Custom1_256pp" SetImage
+    Self "arrow" 3.6 3.6 SetImageScale
+    Self "arrow" 0 SetImagePositionX
+    Self "arrow" -5 SetImagePositionY
+    Self "arrow" -100.1 SetImagePositionZ
+
+    0.6 SetTextSize
+    0 SetTextX
+    -40 SetTextY
+
+    "IDENTIFIER_MAP" TRUE GetCoresWithVar 0 do
+    	->A_iMapUID
+    	break
+    loop
+
+    0 ->iWindUD
+    0 ->iWindRL
+    0 ->iLastWindRL
+    0 ->iLastWindUD
+:OnResize
+	847 ->panelWidth
+    ScreenWidth <-panelWidth sub 2 div ->edgeWidth
+
+    ScreenWidth <-edgeWidth <-panelWidth add 47 SetScreenPixelCoords

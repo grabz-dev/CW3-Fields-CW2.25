@@ -1,0 +1,70 @@
+$minX:0
+$maxX:"MAX"
+$minY:0
+$maxY:"MAX"
+$timer:15
+
+once
+	@awake
+endonce
+
+#Clear all images from previous invocation
+self RemoveImages
+#icount is used as the image index, so we need to reset it on each invocation
+0 ->icount
+
+#The script will cause performance issues if you have it run over the whole map frequently. It is recommended to limit the range to a specific area where you will be applying fields.
+	<-maxY "MAX" EndsWith if MapHeight else <-maxY 1 add endif <-minY do
+		<-maxX "MAX" EndsWith if MapWidth else <-maxX 1 add endif <-minX do
+			#First we check the field of the current cell and skip everything else if there is no field present.
+			I J GetFieldCell pop pop ->RL ->UD
+			<-UD neq0 <-RL neq0 or if 
+				#Now we make a custom image name based on the current image index and use it to set some basic image properties.
+				"field" <-icount concat ->name
+				Self <-name "Custom89" SetImage
+				Self <-name 0.33 0.33 SetImageScale
+				#We need to get the pixel coordinates and delta of the current cell so we can position the image.
+				I J CellToPixel ->py ->px
+				CurrentPixelCoords <-py sub neg ->dy <-px sub neg ->dx
+				self <-name <-dx <-dy -1 SetImagePosition
+				#Image rotation is based on directional strength of fields.
+				<-UD neg <-RL atan2 ->rotation
+				Self <-name <-rotation SetImageRotation
+				#Now we need to determine the color of the marker, which is determined by field strength. The target range for detail is 10,000 to 10,000,000 since most fields will be in that range. Anything outside this range will be pure green or pure red.
+				
+				#So first we start by defaulting to a green marker.
+				#Since we'll be squaring some very large numbers to calculate total strength, we divide the values by 10,000 to ensure we don't hit the integer cap during calculations.
+				<-UD 10000.0 div dup mul <-RL 10000.0 div dup mul add sqrt 10000 mul ->power
+				#With a range this wide it's most efficient to use a log scale, so we take the log of our power value.
+				<-power log10 ->log
+				#First we check if the strength is within our "detail range" of 10,000 - 10,000,000. 
+				<-log 4 gte if 
+					#Red if over 10,000,000
+					<-log 7 gte if 
+						255 ->red
+						0 ->green
+					else
+						#This is the block that activates if we're within the "detail range". First we subtract 4 from the log to simplify calculations by starting from a reference frame of 10,000.
+						<-log 4 sub ->log
+						#Since the range goes from 0-3 now, we simply multiply the log value by 85 (255 divided by 3) to get the red value, and calculate the green value on a reverse scale.
+						<-log 85 mul ->red
+						3 <-log sub 85 mul ->green
+					endif
+				#Green if under 10,000
+				else
+					255 ->green
+					0 ->red
+				endif
+				Self <-name <-red <-green 0 255 SetImageColor
+				#Increase image index and end scrip invocation if we've reached 1000, since scripts cannot have more than 1000 active images.
+				<-icount 1 add ->icount
+				<-icount 1000 gte if return endif
+			endif
+		loop
+	loop
+
+
+<-timer Delay
+
+:awake
+	TRUE OperateWhilePaused

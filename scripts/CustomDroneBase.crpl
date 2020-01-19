@@ -1,0 +1,522 @@
+# CustomDroneBase.crpl
+# Created on: 8/12/2018 5:22:18 AM
+# ------------------------------------------
+$iGatewayUID:-2
+$iCommandNodeUID:-1
+$bDamagedInCreeper:0
+$bDamagedInAntiCreeper:1
+$fSpeed:3.0
+
+once
+	<-iGatewayUID -2 eq if
+		Self 0 Destroy
+	endif
+
+	@SnapToGrid
+
+	FALSE ->bMoving
+	0.0 ->fVelocityX
+	0.0 ->fVelocityY
+	0.0 ->fLastVelocityX
+	0.0 ->fLastVelocityY
+
+	0 ->bTargetX
+	0 ->bTargetY
+
+	CreateList ->lMovementPath
+
+	-1 ->iLastDigitalisX
+	-1 ->iLastDigitalisY
+	FALSE ->bRemoveDigitalisGrowth
+
+	Self CONST_TAKEMAPSPACE 		FALSE SetUnitAttribute
+    Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS 	FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES 	FALSE SetUnitAttribute
+
+	Self CONST_DESTROYMODE          1 SetUnitAttribute
+
+	Self CONST_SNIPERTARGET 		TRUE SetUnitAttribute
+
+	1 ->COMMANDNODE
+	0 ->COLLECTOR
+	0 ->RELAY
+	0 ->REACTOR
+	0 ->OREMINE
+	0 ->SIPHON
+	0 ->TERP
+	0 ->GUPPY
+	0 ->SHIELD
+	1 ->PULSECANNON
+	1 ->MORTAR
+	1 ->STRAFER
+	1 ->BOMBER
+	1 ->SPRAYER
+	1 ->NULLIFIER
+	1 ->BEAM
+	1 ->SNIPER
+	0 ->FORGE
+	1 ->BERTHA
+
+	@awake
+endonce
+
+IsPaused if
+	return
+endif
+
+#Damage ourselves if we're in Creeper or Anti-Creeper
+<-bDamagedInAntiCreeper if
+	CurrentCoords GetCreeper 0 lt if
+		Self 0.1 Damage
+	endif
+endif
+<-bDamagedInCreeper if
+	CurrentCoords GetCreeper 0 gt if
+		Self 0.1 Damage
+	endif
+endif
+
+#Run this code if the drone has reached its current waypoint, so that we can determine the next one, as well as whether a target was hit.
+<-bMoving not if
+	CurrentCoords @SnapCoordsToGrid SetCurrentCoords
+
+	#Determine if there is a unit directly below the drone.
+	CurrentCoords 1 TRUE GetAllUnitsInRange 0 do
+		->iUID
+
+		#If the unit is not on 0,0 (stuff is on 0,0 when landing)
+		<-iUID CONST_COORDX GetUnitAttribute eq0 <-iUID CONST_COORDY GetUnitAttribute eq0 and not if
+			#If we have defined a variable with the name of this unit type, we damage that unit type if we're on it.
+			<-iUID GetUnitType -?! if
+				<-iUID 1 Damage
+
+				#If the defined variable is 1, and the unit is not a ghost, we destroy ourselves.
+				<-iUID CONST_ISBUILDING GetUnitAttribute not if
+					<-iUID GetUnitType <-! 1 eq if
+						Self 1 Destroy
+						return
+					endif
+				endif
+			endif
+		endif
+	loop
+
+	#Determine if there is a unit adjacent to the drone. If there is, we'll derail him a little bit, so he can cause some more havoc.
+	CurrentCoords 4 TRUE GetAllUnitsInRange 0 do
+		->iUID
+
+		#If the unit is not on 0,0 (stuff is on 0,0 when landing)
+		<-iUID CONST_COORDX GetUnitAttribute eq0 <-iUID CONST_COORDY GetUnitAttribute eq0 and not if
+			#Ignore stuff that is building.
+			<-iUID CONST_ISBUILDING GetUnitAttribute not if
+				#CN are our targets, so we ignore those to not cause unwanted behaviour at target.
+				<-iUID GetUnitType "COMMANDNODE" neq if
+					<-iUID GetUnitType -?! if
+						<-iUID CONST_COORDX GetUnitAttribute ->iCellX
+						<-iUID CONST_COORDY GetUnitAttribute ->iCellY
+
+						<-iCellX <-iCellY @IsPositionObstructed not 
+						CurrentX <-iCellY @IsPositionObstructed not and #Make sure diagonals
+						<-iCellX CurrentY @IsPositionObstructed not and #are not obstructed either.
+						if
+							CreateList ->lMovementPath
+							<-lMovementPath 0 <-iCellX SetListElement
+							<-lMovementPath 1 <-iCellY SetListElement
+						endif
+					endif
+				endif
+			endif
+		endif
+	loop
+
+	0.0 ->fVelocityX
+	0.0 ->fVelocityY
+
+	<-lMovementPath GetListCount 0 gt if
+		<-lMovementPath 0 GetListElement <-lMovementPath 1 GetListElement @SnapCoordsToGrid ->iPathY ->iPathX
+		<-iPathX CurrentX sub 3 div <-iPathY CurrentY sub 3 div ->iDirectionY ->iDirectionX
+		<-lMovementPath 0 RemoveListElement
+		<-lMovementPath 0 RemoveListElement
+	else
+		<-iCommandNodeUID -1 neq if
+			<-lMovementPath CurrentCoords <-iCommandNodeUID CONST_COORDX GetUnitAttribute <-iCommandNodeUID CONST_COORDY GetUnitAttribute @GetProcessedPath ->lMovementPath
+		endif
+
+		<-lMovementPath GetListCount 0 gt if
+			<-lMovementPath 0 GetListElement <-lMovementPath 1 GetListElement @SnapCoordsToGrid ->iPathY ->iPathX
+			<-iPathX CurrentX sub 3 div <-iPathY CurrentY sub 3 div ->iDirectionY ->iDirectionX
+			<-lMovementPath 0 RemoveListElement
+			<-lMovementPath 0 RemoveListElement
+		else
+			CurrentCoords @GetRandomMovementDirection ->iDirectionY ->iDirectionX
+		endif
+	endif
+	
+	CurrentX <-iDirectionX 3 mul add 
+	CurrentY <-iDirectionY 3 mul add CellToPixel ->fTargetY ->fTargetX
+
+	<-iDirectionX <-iDirectionY @NormalizeVector ->iDirectionY ->iDirectionX
+	<-iDirectionX <-iDirectionY ->iLastDirectionY ->iLastDirectionX
+
+	<-iDirectionX <-fSpeed mul ->fVelocityX
+	<-iDirectionY neg <-fSpeed mul ->fVelocityY
+
+	TRUE ->bMoving
+endif
+
+#Run this code if the drone has received a velocity and is moving towards the target.
+#This is not an else, so that it works on the same frame.
+<-bMoving if
+	FALSE ->bMovementPassedX
+	FALSE ->bMovementPassedY
+
+	Self CONST_PIXELCOORDX GetUnitAttribute <-fVelocityX add ->fPixelX
+	Self CONST_PIXELCOORDY GetUnitAttribute <-fVelocityY add ->fPixelY
+
+	<-fVelocityX 0 gt if
+		<-fPixelX <-fTargetX gte ->bMovementPassedX
+	else <-fVelocityX 0 lt if
+		<-fPixelX <-fTargetX lte ->bMovementPassedX
+	else
+		TRUE ->bMovementPassedX
+	endif endif
+
+	<-fVelocityY 0 gt if
+		<-fPixelY <-fTargetY gte ->bMovementPassedY
+	else <-fVelocityY 0 lt if
+		<-fPixelY <-fTargetY lte ->bMovementPassedY
+	else
+		TRUE ->bMovementPassedY
+	endif endif
+
+	<-bMovementPassedX <-bMovementPassedY and if
+		Self CONST_PIXELCOORDX <-fTargetX SetUnitAttribute
+		Self CONST_PIXELCOORDY <-fTargetY SetUnitAttribute
+
+		FALSE ->bMoving
+	else
+		Self CONST_PIXELCOORDX <-fPixelX SetUnitAttribute
+		Self CONST_PIXELCOORDY <-fPixelY SetUnitAttribute
+	endif
+endif
+
+@UpdateVisualHealthAura
+
+:awake
+	TRUE OperateWhilePaused
+	TRUE ->IDENTIFIER_CUSTOMDRONEBASE
+
+	ClearTraceLog
+	HideTraceLog
+
+	Self "shadow" 0 0 0 100 SetImageColor
+	Self "shadow" 0.75 dup SetImageScale
+
+	Self "shadow" 6 -6 -41.0 SetImagePosition
+	Self "main" -41.1 SetImagePositionZ
+	Self "health" -41.2 SetImagePositionZ
+
+	@UpdateVisualHealthAura
+:destroyed
+	<-iGatewayUID -1 gt if
+		<-iGatewayUID "Gateway.crpl" "iDronesCurrent" <-iGatewayUID "Gateway.crpl" "iDronesCurrent" GetScriptVar 1 sub SetScriptVar
+	endif
+
+	<-bDamagedInCreeper if
+		CurrentY 2 add CurrentY 1 sub do
+			CurrentX 2 add CurrentX 1 sub do
+				I J GetCreeper 0 gt if
+					I J I J GetCreeper 1.0 sub 0 max SetCreeper
+				endif
+			loop
+		loop
+	endif
+
+	<-bDamagedInAntiCreeper if
+		CurrentY 2 add CurrentY 1 sub do
+			CurrentX 2 add CurrentX 1 sub do
+				I J GetCreeper 0 lt if
+					I J I J GetCreeper 1.0 add 0 min SetCreeper
+				endif
+			loop
+		loop
+	endif
+:UpdateVisualHealthAura
+	Self "health" 255 255 255 Self CONST_HEALTH GetUnitAttribute 20 sub asint 2 mul SetImageColor
+
+:SnapCoordsToGrid
+	->SCT_iCellY
+	->SCT_iCellX
+
+	<-SCT_iCellX asint ->SCT_iCellX
+	<-SCT_iCellY asint ->SCT_iCellY
+
+	<-SCT_iCellX 3 div asint 3 mul 1 add
+	<-SCT_iCellY 3 div asint 3 mul 1 add
+	return
+:SnapToGrid
+	CurrentCoords ->STG_iCellY ->STG_iCellX
+
+	<-STG_iCellX asint ->STG_iCellX
+	<-STG_iCellY asint ->STG_iCellY
+
+	<-STG_iCellX 3 div asint 3 mul 1 add <-STG_iCellY 3 div asint 3 mul 1 add SetCurrentCoords
+:NormalizeVector
+	->NV_iY ->NV_iX
+
+	<-NV_iX 0.0 add ->NV_iX
+	<-NV_iY 0.0 add ->NV_iY
+
+	<-NV_iX <-NV_iX mul <-NV_iY <-NV_iY mul add sqrt ->NV_fLength
+
+	<-NV_fLength eq0 if
+		0.0 0.0
+		return
+	else
+		<-NV_iX <-NV_fLength div <-NV_iY <-NV_fLength div
+		return
+	endif
+:IsPositionObstructed
+	->IPB_iY
+	->IPB_iX
+
+	<-IPB_iX <-IPB_iY @SnapCoordsToGrid ->IPB_iY ->IPB_iX
+
+	<-IPB_iX <-IPB_iY GetWall
+	<-IPB_iX <-IPB_iY GetVoid or if
+		TRUE return
+	endif
+
+	FALSE return
+:GetRandomMovementDirection
+	->GRM_iOriginCellY
+	->GRM_iOriginCellX
+
+	<-GRM_iOriginCellX <-GRM_iOriginCellY @SnapCoordsToGrid ->GRM_iOriginCellY ->GRM_iOriginCellX
+
+	CreateList ->GRM_lAllMovementDirections
+
+	<-GRM_lAllMovementDirections 0   1 	SetListElement
+	<-GRM_lAllMovementDirections 1   0 	SetListElement
+
+	<-GRM_lAllMovementDirections 2  -1 	SetListElement
+	<-GRM_lAllMovementDirections 3   0	SetListElement
+
+	<-GRM_lAllMovementDirections 4   0 	SetListElement
+	<-GRM_lAllMovementDirections 5   1 	SetListElement
+
+	<-GRM_lAllMovementDirections 6   0 	SetListElement
+	<-GRM_lAllMovementDirections 7  -1 	SetListElement
+
+	<-GRM_lAllMovementDirections 8   1 	SetListElement
+	<-GRM_lAllMovementDirections 9   1	SetListElement
+
+	<-GRM_lAllMovementDirections 10 -1  SetListElement
+	<-GRM_lAllMovementDirections 11 -1  SetListElement
+
+	<-GRM_lAllMovementDirections 12 -1 	SetListElement
+	<-GRM_lAllMovementDirections 13  1	SetListElement
+
+	<-GRM_lAllMovementDirections 14  1 	SetListElement
+	<-GRM_lAllMovementDirections 15 -1 	SetListElement
+	
+	while 
+		<-GRM_lAllMovementDirections GetListCount 0 gt
+	repeat
+		0 <-GRM_lAllMovementDirections GetListCount 2 div RandInt ->GRM_iRandomIndex
+		<-GRM_iRandomIndex 2 mul ->GRM_iRandomIndex
+
+		<-GRM_lAllMovementDirections <-GRM_iRandomIndex       GetListElement ->GRM_iDirectionX
+		<-GRM_lAllMovementDirections <-GRM_iRandomIndex 1 add GetListElement ->GRM_iDirectionY
+
+		<-GRM_iOriginCellX <-GRM_iDirectionX 3 mul add ->GRM_iTargetCellX
+		<-GRM_iOriginCellY <-GRM_iDirectionY 3 mul add ->GRM_iTargetCellY
+
+		#If the target cell is in bounds.
+		<-GRM_iTargetCellX 0 gte
+		<-GRM_iTargetCellX MapWidth lt and
+		<-GRM_iTargetCellY 0 gte and
+		<-GRM_iTargetCellY MapHeight lt and if
+			#If the random direction is not the exact reverse of the direction we went in last time.
+			#This is so that the drone doesn't go back and forth in the same direction.
+			<-GRM_iDirectionX neg <-iLastDirectionX eq <-GRM_iDirectionY neg <-iLastDirectionY eq and not if
+				#If the target cell is not obstructed.
+				<-GRM_iTargetCellX <-GRM_iTargetCellY @IsPositionObstructed not if
+					#If the movement is diagonal, we have to check the side cells too.
+					<-GRM_iDirectionX neq0 <-GRM_iDirectionY neq0 and if
+						#If the first side cell is not obstructed.
+						<-GRM_iOriginCellX <-GRM_iTargetCellY @IsPositionObstructed not if
+							#If the second side cell is not obstructed.
+							<-GRM_iTargetCellX <-GRM_iOriginCellY @IsPositionObstructed not if
+								#We send the movement out.
+								<-GRM_iDirectionX <-GRM_iDirectionY return
+							endif
+						endif
+					#If the movement isn't diagonal, send the movement out.
+					else
+						<-GRM_iDirectionX <-GRM_iDirectionY return
+					endif
+				endif
+			endif
+		endif
+
+		#If the movement is obstructed, we remove it from the list.
+		<-GRM_lAllMovementDirections <-GRM_iRandomIndex RemoveListElement
+		<-GRM_lAllMovementDirections <-GRM_iRandomIndex RemoveListElement
+	endwhile
+
+	0 0 return
+:GetProcessedPath
+	asint ->GPP_iTargetY
+	asint ->GPP_iTargetX
+	asint ->GPP_iOriginY
+	asint ->GPP_iOriginX
+	->GPP_lTargetPath
+
+	#Now that we know where the unit is going, we can run a pathfind to figure out the path our unit should take.
+	<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 2 sub GetListElement <-GPP_iTargetX eq
+	<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 1 sub GetListElement <-GPP_iTargetY eq and if
+		<-GPP_lTargetPath 0 GetListElement <-GPP_lTargetPath 1 GetListElement <-GPP_iTargetX <-GPP_iTargetY 1 1 FALSE TRUE PathFindTerrain ->GPP_lTargetPathRaw
+		FALSE ->GPP_bProcessBeginning
+	else
+		<-GPP_iOriginX <-GPP_iOriginY <-GPP_iTargetX <-GPP_iTargetY 1 1 FALSE TRUE PathFindTerrain ->GPP_lTargetPathRaw
+		TRUE ->GPP_bProcessBeginning
+	endif
+
+	CreateList ->GPP_lTargetPath
+
+	<-GPP_lTargetPathRaw GetListCount eq0 if
+		<-GPP_lTargetPath return
+	endif
+
+	#Convert raw coordinates y*MapWidth+x to a [X, Y, X, Y] coordinate set.
+	#Then, snap the coordinates to grid.
+	#If it's not a duplicate entry (as snapping will cause those), don't include it in the main list.
+	#We end up with a list of coordinates to move to snapped to the 3x3 grid.
+	-1 ->GPP_iLastX
+	-1 ->GPP_iLastY
+	<-GPP_lTargetPathRaw GetListCount 0 do
+		<-GPP_lTargetPathRaw I GetListElement ->GPP_iCoordinateRaw
+		<-GPP_lTargetPath <-GPP_iCoordinateRaw MapWidth mod ->GPP_iX
+		<-GPP_lTargetPath <-GPP_iCoordinateRaw MapWidth div ->GPP_iY
+
+		<-GPP_iX <-GPP_iY @SnapCoordsToGrid ->GPP_iY ->GPP_iX
+
+		<-GPP_iX <-GPP_iLastX neq <-GPP_iY <-GPP_iLastY neq or if
+			<-GPP_lTargetPath <-GPP_iX AppendToList
+			<-GPP_lTargetPath <-GPP_iY AppendToList
+
+			<-GPP_iX ->GPP_iLastX
+			<-GPP_iY ->GPP_iLastY
+		endif
+	loop
+
+	#Using forbidden magic, change the path so that diagonal movements cannot go through walls on the sides of the diagonal.
+	
+	#First, run a routine that, on each diagonal movement, will detect if there's collision with walls on the sides.
+	#A diagonal movement has two sides that a unit will clip.
+	#If a collision is detected with one of the sides, change the current path coordinate to the position of the other side.
+	#This is to emulate the unit taking the shortest diagonal path around stairs of tiles.
+	0 ->GPP_iJ
+	while TRUE repeat
+		<-GPP_iJ 4 sub <-GPP_lTargetPath GetListCount gt if
+			break
+		endif
+
+		<-GPP_lTargetPath <-GPP_iJ       GetListElement ->GPP_iPathX1
+		<-GPP_lTargetPath <-GPP_iJ 1 add GetListElement ->GPP_iPathY1
+		<-GPP_lTargetPath <-GPP_iJ 2 add GetListElement ->GPP_iPathX2
+		<-GPP_lTargetPath <-GPP_iJ 3 add GetListElement ->GPP_iPathY2
+
+		#Process only if this movement is diagonal.
+		<-GPP_iPathX2 <-GPP_iPathX1 sub abs 3 eq
+		<-GPP_iPathY2 <-GPP_iPathY1 sub abs 3 eq and if
+			#Check the two tiles that will be in the way of the unit's adjacent movement.
+			#If one of them is an obstacle, change the current path coordinates to the position of the other tile.
+			<-GPP_iPathX1 <-GPP_iPathY2 @IsPositionObstructed if
+				<-GPP_lTargetPath <-GPP_iJ 2 add <-GPP_iPathX2 InsertListElement
+				<-GPP_lTargetPath <-GPP_iJ 3 add <-GPP_iPathY1 InsertListElement
+				<-GPP_iJ 2 add ->GPP_iJ
+			else <-GPP_iPathX2 <-GPP_iPathY1 @IsPositionObstructed if
+				<-GPP_lTargetPath <-GPP_iJ 2 add <-GPP_iPathX1 InsertListElement
+				<-GPP_lTargetPath <-GPP_iJ 3 add <-GPP_iPathY2 InsertListElement
+				<-GPP_iJ 2 add ->GPP_iJ
+			endif endif
+		endif
+
+		<-GPP_iJ 2 add ->GPP_iJ
+	endwhile
+
+	#Secondly, because of the routine above, if the unit finds itself in a diagonal wall tunnel, it will clip the wall on the other side.
+	#To prevent that, we can run the exact same routine again, but now if a diagonal movement is blocked, we will insert 
+	#a new coordinate set to change the diagonal path to a four directional one, to directly avoid collision.
+	0 ->GPP_iJ
+	while TRUE repeat
+		<-GPP_iJ 4 sub <-GPP_lTargetPath GetListCount gt if
+			break
+		endif
+
+		<-GPP_lTargetPath <-GPP_iJ       GetListElement ->GPP_iPathX1
+		<-GPP_lTargetPath <-GPP_iJ 1 add GetListElement ->GPP_iPathY1
+		<-GPP_lTargetPath <-GPP_iJ 2 add GetListElement ->GPP_iPathX2
+		<-GPP_lTargetPath <-GPP_iJ 3 add GetListElement ->GPP_iPathY2
+
+		#Process only if this movement is diagonal.
+		<-GPP_iPathX2 <-GPP_iPathX1 sub abs 3 eq
+		<-GPP_iPathY2 <-GPP_iPathY1 sub abs 3 eq and if
+			#Check the two tiles that will be in the way of the unit's adjacent movement.
+			#If one of them is an obstacle, we have to add a path between the adjacent movement to go through the other one.
+			#An adjacent path blocked from both sides is not handled, as it should not be allowed by the pathfinder.
+			<-GPP_iPathX1 <-GPP_iPathY2 @IsPositionObstructed if
+				<-GPP_lTargetPath <-GPP_iJ 2 add <-GPP_iPathX2 InsertListElement
+				<-GPP_lTargetPath <-GPP_iJ 3 add <-GPP_iPathY1 InsertListElement
+			else <-GPP_iPathX2 <-GPP_iPathY1 @IsPositionObstructed if
+				<-GPP_lTargetPath <-GPP_iJ 2 add <-GPP_iPathX1 InsertListElement
+				<-GPP_lTargetPath <-GPP_iJ 3 add <-GPP_iPathY2 InsertListElement
+			endif endif
+		endif
+
+		<-GPP_iJ 2 add ->GPP_iJ
+	endwhile
+
+	<-GPP_bProcessBeginning if
+		#Snap the current unit position to grid. Remove all potential instances of this coordinate from the start of the path list.
+		<-GPP_iOriginX <-GPP_iOriginY @SnapCoordsToGrid ->GPP_iOriginSnappedY ->GPP_iOriginSnappedX
+		while TRUE repeat
+			<-GPP_lTargetPath GetListCount 2 lt if
+				break
+			endif
+
+			<-GPP_lTargetPath 0 GetListElement <-GPP_iOriginSnappedX eq
+			<-GPP_lTargetPath 1 GetListElement <-GPP_iOriginSnappedY eq and if
+				<-GPP_lTargetPath 0 RemoveListElement
+				<-GPP_lTargetPath 0 RemoveListElement
+			else
+				break
+			endif
+		endwhile
+	endif
+
+	#Snap the target position to grid. Remove all potential instances of this coordinate set from the end of the path list.
+	<-GPP_iTargetX <-GPP_iTargetY @SnapCoordsToGrid ->GPP_iTargetSnappedY ->GPP_iTargetSnappedX
+	while TRUE repeat
+		<-GPP_lTargetPath GetListCount 2 lt if
+			break
+		endif
+
+		<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 2 sub GetListElement <-GPP_iTargetSnappedX eq
+		<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 1 sub GetListElement <-GPP_iTargetSnappedY eq and if
+			<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 1 sub RemoveListElement
+			<-GPP_lTargetPath <-GPP_lTargetPath GetListCount 1 sub RemoveListElement
+		else
+			break
+		endif
+	endwhile
+
+	#Add the target position to the end of the path list.
+	<-GPP_lTargetPath <-GPP_iTargetX AppendToList
+	<-GPP_lTargetPath <-GPP_iTargetY AppendToList
+
+	<-GPP_lTargetPath return

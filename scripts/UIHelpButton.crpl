@@ -1,0 +1,74 @@
+# UIHelpButton.crpl
+# Created on: 8/8/2018 10:34:15 AM
+# ------------------------------------------
+once
+	@awake
+endonce
+
+GetMouseScreenPixelPosition ->fMousePixelY ->fMousePixelX
+
+<-fMousePixelX 130.0 lt <-fMousePixelY 46.0 lt and if
+    Self "main" "Custom1_128pp" SetImage
+
+    ConversationShowing not if
+        0 GetMouseButtonDown if
+            ClearConversation
+1 "Click on a terrain tile to mark it for excavation. Connect the marked tile to your network to begin digging. Click and drag will mark multiple.
+
+You can't mine out tiles from the center." AddConversationMessage
+
+1 "Shift+Click will designate a build order for a Collector or Siphon to be placed after excavation on a tile is complete." AddConversationMessage
+
+1 "You must dig to areas in order to reach them.
+An open area that is out of your reach will appear as fog.
+
+Create an opening to such an area to begin operations there." AddConversationMessage
+
+1 "If Gateways are present, your Command Nodes will be attacked by Drones.
+
+Defend yourself against them with Snipers." AddConversationMessage
+
+1 "When a Command Node is in orbit, it is stocked up with a Radar, which will be placed upon landing.
+A Radar is what allows us to see all of the connected caverns.
+It will be destroyed in contact with Creeper." AddConversationMessage
+
+1 "Losing all of the Radars will fail the mission. Choose your starting area carefully.
+
+You might have to restart the mission if you choose a bad starting area." AddConversationMessage
+
+1 "Some units, like the Mortar, can fire over terrain.
+Sprayers have a togglable 'Always On' mode that lets them continuously create Anti-Creeper. 
+
+Use this information to your advantage." AddConversationMessage
+
+1 "If many fields are present, hiding field display should vastly improve save/load times. If you're speedrunning, you might find that useful." AddConversationMessage
+
+1 "To complete this assignment, destroy all enemy structures and flip all flip emitters to Anti-Creeper with Nullifiers.
+
+Have fun!" AddConversationMessage
+            ShowConversation
+            PauseGame
+        endif
+    endif
+else
+    Self "main" "Custom0_128pp" SetImage
+endif
+
+:awake
+	TRUE OperateWhilePaused
+	TRUE ->IDENTIFIER_UIHELPBUTTON
+
+	Self CONST_TAKEMAPSPACE 		FALSE SetUnitAttribute
+    Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS 	FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES 	FALSE SetUnitAttribute
+    Self "main" "Custom0_128pp" SetImage
+    Self "main" 128 24.0 div dup SetImageScale
+    Self "main" 65 SetImagePositionX
+    Self "main" 80 SetImagePositionY
+    Self "main" -100 SetImagePositionZ
+
+    TRUE SetScreenMode
+    0 0 SetScreenCoords
+    
