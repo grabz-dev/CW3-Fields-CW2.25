@@ -23,6 +23,6 @@ endonce
     0 SetTextX
     6 SetTextY
 
-	"CW2.25 v1.0" SetText
+	"CW2.25 v1.1" SetText
 
     0 0 SetScreenCoords

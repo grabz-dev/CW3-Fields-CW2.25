@@ -102,6 +102,44 @@ endif
     endwhile
 endif
 
+#Events are added to this list from FieldRotator.crpl
+<-G_lRotationEvents GetListCount 0 gt if
+    while <-G_lRotationEvents GetListCount 0 gt repeat
+        #Get coords
+        <-G_lRotationEvents 0 GetListElement ->iX
+        <-G_lRotationEvents 1 GetListElement ->iY
+
+        #Get rotation offset
+        <-G_lRotationEvents 2 GetListElement ->fAngleOffset
+
+        #"C", "AC"
+        <-G_lRotationEvents 3 GetListElement ->sC
+
+        "IC_l2dFields" <-sC concat "UD" concat <-! ->l2dFieldsUD
+        "IC_l2dFields" <-sC concat "RL" concat <-! ->l2dFieldsRL
+
+        <-l2dFieldsUD <-iY GetListElement <-iX GetListElement ->iUD
+        <-l2dFieldsRL <-iY GetListElement <-iX GetListElement ->iRL
+
+        <-iUD 2 pow <-iRL 2 pow add sqrt ->fLength
+        <-iUD <-iRL atan2 ->fAngle
+        <-fAngle <-fAngleOffset add ->fAngle
+        <-fAngle sin <-fLength mul asint ->iUD
+        <-fAngle cos <-fLength mul asint ->iRL
+
+        <-iX <-iY <-iUD <-iRL <-sC FALSE FALSE @AddField
+
+        <-G_bFieldsVisible if
+            <-iX <-iY <-iUD <-iRL <-sC FALSE @FieldImageAdd
+        endif
+
+        <-G_lRotationEvents 0 RemoveListElement
+        <-G_lRotationEvents 0 RemoveListElement
+        <-G_lRotationEvents 0 RemoveListElement
+        <-G_lRotationEvents 0 RemoveListElement
+    endwhile
+endif
+
 # -
 # Arguments:
 # Result:
@@ -150,8 +188,11 @@ Please reduce the size of the map and recompile all scripts." SetText
         1920000 ->FieldPower4
         7680000 ->FieldPower5
 
-        # iX, iY, iUD, iRL, sC
+        # iX, iY, iUD, iRL, sC, bIsPin, bIsErase
         CreateList ->G_lEditorEvents
+
+        # iX, iY, fAngle, sC
+        CreateList ->G_lRotationEvents
 
         #Create field lists for internal keeping. We need this because we don't want to clash with fields built by shields etc.
         CreateList ->IC_l2dFieldsCUD
@@ -325,9 +366,9 @@ Please reduce the size of the map and recompile all scripts." SetText
     #Finally set the field cell back
     <-AF_iX <-AF_iY
         <-AF_sC "C" eq if
-            <-AF_iCurUD <-AF_iCurRL <-AF_iOtherRL <-AF_iOtherUD 
+            <-AF_iCurUD <-AF_iCurRL <-AF_iOtherUD <-AF_iOtherRL
         else <-AF_sC "AC" eq if
-            <-AF_iOtherRL <-AF_iOtherUD <-AF_iCurUD <-AF_iCurRL
+            <-AF_iOtherUD <-AF_iOtherRL <-AF_iCurUD <-AF_iCurRL
         endif endif
     SetFieldCell
 

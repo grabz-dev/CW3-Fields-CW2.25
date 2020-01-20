@@ -1,0 +1,210 @@
+# FieldRotator.crpl
+# Created on: 1/18/2020 6:40:15 PM
+# ------------------------------------------
+$iWidthRadius:3
+$iHeightRadius:3
+$sRotateMode:"C"
+$iInitialDelay:120
+$sAction0:"45,120"
+$sAction1:""
+$sAction2:""
+$sAction3:""
+$sAction4:""
+$sAction5:""
+$sAction6:""
+$sAction7:""
+$sAction8:""
+$sAction9:""
+$sAction10:""
+$sAction11:""
+$sAction12:""
+$sAction13:""
+$sAction14:""
+$sAction15:""
+#Add more if needed.
+
+once
+    @awake
+
+    #Find the manager.
+    "IDENTIFIER_STANDALONEFIELDMANAGER" TRUE GetCoresWithVar 0 do
+        ->G_iFieldManagerUID
+    loop
+
+    #Next action to execute after interval passes.
+    0 ->G_iActionIndex
+
+    #Convert all string actions to vars.
+    0 ->iI
+    while TRUE repeat
+        "sAction" <-iI concat <-! ->sTemp
+        <-sTemp StringLength eq0 if break endif
+        <-sTemp "," Split ->lTemp
+        <-lTemp 0 GetListElement asfloat PI 180.0 div mul "fActionAngle" <-iI concat ->!
+        <-lTemp 1 GetListElement asint "iActionInterval" <-iI concat ->!
+
+        <-iI 1 add ->iI
+    endwhile
+
+    #Main timer.
+    <-iInitialDelay ->TIMER0
+
+    #Passive rotation of main image. Changes based on the next field rotation action.
+    0.0 ->G_fSelfRotation
+
+    0.35 SetTextSize
+    0 SetTextX
+    -1 SetTextY
+
+    @UpdateSelfRotation
+    @RefreshPopupText
+endonce
+
+IsPaused if
+    return
+endif
+<-TIMER0 1 sub 0 max ->TIMER0
+<-TIMER0 @GetFormattedTime SetText
+Self "main" Self "main" GetImageRotation <-G_fSelfRotation 30.0 div neg add SetImageRotation
+
+<-TIMER0 eq0 if
+    "fActionAngle" <-G_iActionIndex concat <-! ->fAngleOffset
+    "iActionInterval" <-G_iActionIndex concat <-! ->TIMER0
+    <-G_iActionIndex 1 add ->G_iActionIndex
+    #If next action does not exist, go back to 0.
+    "fActionAngle" <-G_iActionIndex concat -?! not if
+        0 ->G_iActionIndex
+    endif
+
+    <-sRotateMode "C" eq <-sRotateMode "AC" eq or if
+        <-sRotateMode @ProcessTick
+    else
+        "C" @ProcessTick
+        "AC" @ProcessTick
+    endif
+
+    @UpdateSelfRotation
+    @RefreshPopupText
+endif
+
+:ProcessTick
+    ->PT_sMode
+
+    <-G_iFieldManagerUID "StandaloneFieldManager.crpl" "G_lRotationEvents" GetScriptVar ->PT_lRotationEvents
+    <-G_iFieldManagerUID "StandaloneFieldManager.crpl" "IC_l2dFields" <-PT_sMode concat "UD" concat GetScriptVar ->PT_l2dFieldsUD
+    <-G_iFieldManagerUID "StandaloneFieldManager.crpl" "IC_l2dFields" <-PT_sMode concat "RL" concat GetScriptVar ->PT_l2dFieldsRL
+
+    CurrentY <-iHeightRadius add 1 add CurrentY <-iHeightRadius sub do
+        CurrentX <-iWidthRadius add 1 add CurrentX <-iWidthRadius sub do
+            I 0 gte J 0 gte and I MapWidth lt and J MapHeight lt and if
+                <-PT_l2dFieldsUD J GetListElement I GetListElement ->PT_iUD
+                <-PT_l2dFieldsRL J GetListElement I GetListElement ->PT_iRL
+                <-PT_iUD eq0 <-PT_iRL eq0 and not if
+                    <-PT_lRotationEvents I AppendToList
+                    <-PT_lRotationEvents J AppendToList
+                    <-PT_lRotationEvents <-fAngleOffset AppendToList
+                    <-PT_lRotationEvents <-PT_sMode AppendToList
+                endif
+            endif
+        loop
+    loop
+
+    <-G_iFieldManagerUID "StandaloneFieldManager.crpl" "G_lRotationEvents" <-PT_lRotationEvents SetScriptVar
+:awake
+    TRUE OperateWhilePaused
+
+    TRUE ->IDENTIFIER_FIELDROTATOR
+
+    Self CONST_TAKEMAPSPACE 		FALSE SetUnitAttribute
+    Self CONST_CREATEPZ 			FALSE SetUnitAttribute
+    Self CONST_SUPPORTSDIGITALIS 	FALSE SetUnitAttribute
+    Self CONST_COUNTSFORVICTORY 	FALSE SetUnitAttribute
+    Self CONST_NULLIFIERDAMAGES 	FALSE SetUnitAttribute
+
+    Self "main" "Custom73pp" SetImage
+    Self "main" 0.6 0.6 SetImageScale
+
+    Self "box1" "Custom86pp" SetImage
+    Self "box2" "Custom86pp" SetImage 
+    Self "box3" "Custom86pp" SetImage 
+    Self "box4" "Custom86pp" SetImage
+
+    ClearStack "main" "box1" "box2" "box3" "box4" while StackSize neq0 repeat
+        Self swap 0 @GetColor SetImageColor
+    endwhile
+    80 @GetColor SetTextColor
+
+    0.05 ->fBorderThickness
+
+    Self "box1" -300 SetImagePositionZ
+    Self "box2" -300 SetImagePositionZ
+    Self "box3" -300 SetImagePositionZ
+    Self "box4" -300 SetImagePositionZ
+
+    Self "box1" <-iWidthRadius 8 mul 3 add neg SetImagePositionX
+    Self "box1" <-fBorderThickness SetImageScaleX
+    Self "box1" <-iHeightRadius 3.0 div 2 mul 0.3 add SetImageScaleY
+
+    Self "box2" <-iWidthRadius 8 mul 3 add SetImagePositionX
+    Self "box2" <-fBorderThickness SetImageScaleX
+    Self "box2" <-iHeightRadius 3.0 div 2 mul 0.3 add SetImageScaleY
+
+    Self "box3" <-iHeightRadius 8 mul 3 add neg SetImagePositionY
+    Self "box3" <-fBorderThickness SetImageScaleY
+    Self "box3" <-iWidthRadius 3.0 div 2 mul 0.3 add SetImageScaleX
+
+    Self "box4" <-iHeightRadius 8 mul 3 add SetImagePositionY
+    Self "box4" <-fBorderThickness SetImageScaleY
+    Self "box4" <-iWidthRadius 3.0 div 2 mul 0.3 add SetImageScaleX
+
+    0 SetPopupTextX
+    16 SetPopupTextY
+
+:UpdateSelfRotation
+    "fActionAngle" <-G_iActionIndex concat <-! ->G_fSelfRotation
+
+:GetFormattedTime
+    ->GFT_iFrames
+
+    <-GFT_iFrames 30.0 div ->GFT_fAllSeconds
+    <-GFT_fAllSeconds 60.0 div ->GFT_fMinutes
+    <-GFT_fAllSeconds 60 mod ->GFT_fSeconds
+
+    <-GFT_fSeconds floor "" concat ->GFT_sSeconds
+
+    <-GFT_fAllSeconds 60 lt if
+        <-GFT_sSeconds
+    else
+        <-GFT_fSeconds 10 lt if
+            "0" <-GFT_sSeconds concat ->GFT_sSeconds
+        endif
+
+        <-GFT_fMinutes floor ":" concat <-GFT_sSeconds concat
+    endif
+
+:GetColor
+    ->GC_i
+    <-sRotateMode "C" eq if
+        102 <-GC_i add
+        126 <-GC_i add
+        221 <-GC_i add
+        255 <-GC_i add
+    else <-sRotateMode "AC" eq if
+        150 <-GC_i add
+        150 <-GC_i add
+        150 <-GC_i add
+        255 <-GC_i add
+    else
+        50 <-GC_i add
+        180 <-GC_i add
+        50 <-GC_i add
+        255 <-GC_i add
+    endif endif
+
+:RefreshPopupText
+    "sAction" <-G_iActionIndex concat <-! "," Split 0 GetListElement asfloat ->RPT_fDeg
+
+    "Next field rotation:
+"
+    <-RPT_fDeg abs concat "deg " concat <-RPT_fDeg 0 gte if "clockwise" else "anticlockwise" endif concat
+    SetPopupText
